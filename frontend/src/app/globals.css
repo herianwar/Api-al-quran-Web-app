@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6faf8;
+  --foreground: #0f1f1a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-arabic: "Amiri", "Scheherazade New", "Traditional Arabic", serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a1311;
+    --foreground: #e7f0ec;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+.arabic {
+  direction: rtl;
+  font-family: var(--font-arabic);
+  line-height: 2.15;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 122, 87, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

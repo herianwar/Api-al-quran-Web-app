@@ -51,6 +51,23 @@ Butuh PostgreSQL + Redis berjalan. Cara cepat hanya untuk dependensi:
 docker compose up -d postgres redis
 ```
 
+## Frontend (web app)
+
+A modern **Next.js 16 + React 19 + Tailwind v4** client lives in
+[`frontend/`](./frontend). Features: daftar & baca surat, murottal per qari,
+tafsir per ayat, pencarian ayat, doa, jadwal sholat, serta login + bookmark
+dan hafalan (spaced-repetition) yang terhubung ke API ini.
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local     # set NEXT_PUBLIC_API_URL ke backend (mis. http://localhost:3000/api/v1)
+npm run dev -- -p 3001         # http://localhost:3001
+```
+
+Pastikan backend berjalan dan sudah di-seed agar data tampil. Backend sudah
+meng-_allow_ CORS (atur `CORS_ORIGIN` di backend bila perlu membatasi origin).
+
 ## Seeding
 
 1. Buka **`/seed-monitor.html`**, isi **Seed Admin Key** (env `SEED_ADMIN_KEY`).
