@@ -1,0 +1,214 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── QURAN CORE ───────────────────────────────────────
+
+model Surah {
+  id           Int      @id @default(autoincrement())
+  nomor        Int      @unique
+  nama         String // Arab
+  namaLatin    String
+  arti         String
+  jumlahAyat   Int
+  tempatTurun  String // mekah / madinah
+  deskripsi    String   @db.Text
+  audioFullUrl Json? // { "01": url, "02": url, ... }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ayat   Ayat[]
+  tafsir Tafsir[]
+
+  @@map("surahs")
+}
+
+model Ayat {
+  id            Int    @id @default(autoincrement())
+  surahId       Int
+  nomorAyat     Int
+  teksArab      String @db.Text
+  teksLatin     String @db.Text
+  teksIndonesia String @db.Text
+  audioUrls     Json // { "01": url, ..., "06": url }
+
+  surah      Surah        @relation(fields: [surahId], references: [id], onDelete: Cascade)
+  tafsirAyat TafsirAyat[]
+  bookmarks  Bookmark[]
+  hafalan    Hafalan[]
+
+  @@unique([surahId, nomorAyat])
+  @@index([surahId])
+  @@map("ayat")
+}
+
+model Tafsir {
+  id      Int    @id @default(autoincrement())
+  surahId Int
+  sumber  String @default("kemenag")
+
+  surah    Surah        @relation(fields: [surahId], references: [id], onDelete: Cascade)
+  ayatList TafsirAyat[]
+
+  @@unique([surahId, sumber])
+  @@map("tafsir")
+}
+
+model TafsirAyat {
+  id       Int    @id @default(autoincrement())
+  tafsirId Int
+  ayatId   Int
+  teks     String @db.Text
+
+  tafsir Tafsir @relation(fields: [tafsirId], references: [id], onDelete: Cascade)
+  ayat   Ayat   @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([tafsirId, ayatId])
+  @@index([ayatId])
+  @@map("tafsir_ayat")
+}
+
+// ─── DOA & DZIKIR ─────────────────────────────────────
+
+model Doa {
+  id        Int      @id @default(autoincrement())
+  judul     String
+  arab      String   @db.Text
+  latin     String   @db.Text
+  terjemah  String   @db.Text
+  sumber    String?
+  grup      String?
+  tag       String?
+  createdAt DateTime @default(now())
+
+  @@map("doa")
+}
+
+// ─── JADWAL SHOLAT ────────────────────────────────────
+
+model JadwalSholat {
+  id       Int      @id @default(autoincrement())
+  kotaId   String
+  namaKota String
+  provinsi String
+  tanggal  DateTime @db.Date
+  imsak    String
+  subuh    String
+  terbit   String
+  dhuha    String
+  dzuhur   String
+  ashar    String
+  maghrib  String
+  isya     String
+
+  @@unique([kotaId, tanggal])
+  @@index([kotaId])
+  @@map("jadwal_sholat")
+}
+
+model Kota {
+  id       String @id
+  nama     String
+  provinsi String
+
+  @@index([provinsi])
+  @@map("kota")
+}
+
+// ─── USER ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  nama         String?
+  role         String   @default("user") // user / admin
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookmarks       Bookmark[]
+  readingProgress ReadingProgress[]
+  hafalan         Hafalan[]
+  refreshTokens   RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  ayatId    Int
+  catatan   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ayatId])
+  @@index([userId])
+  @@map("bookmarks")
+}
+
+model ReadingProgress {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  surahId   Int
+  ayatId    Int
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reading_progress")
+}
+
+model Hafalan {
+  id           String    @id @default(uuid())
+  userId       String
+  ayatId       Int
+  level        Int       @default(0) // 0-5 (spaced repetition level)
+  nextReviewAt DateTime  @default(now())
+  lastReviewAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ayatId])
+  @@index([userId, nextReviewAt])
+  @@map("hafalan")
+}
+
+// ─── SEED TRACKING ────────────────────────────────────
+
+model SeedLog {
+  id         Int       @id @default(autoincrement())
+  jobName    String    @unique // "surah", "ayat", "tafsir", "doa", "sholat"
+  status     String    @default("pending") // "pending", "running", "done", "error"
+  totalItems Int       @default(0)
+  doneItems  Int       @default(0)
+  errorMsg   String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("seed_logs")
+}
