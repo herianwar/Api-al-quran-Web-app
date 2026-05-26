@@ -143,16 +143,35 @@ export class QuranService {
     });
   }
 
-  getHalaman(nomor: number): never {
-    // equran.id v2 does not expose mushaf page boundaries, and the schema has
-    // no page column, so per-page lookup cannot be served from seeded data.
-    throw new HttpException(
-      {
-        message: `Lookup per halaman (${nomor}) belum tersedia: data batas halaman mushaf tidak disediakan oleh equran.id v2`,
-        error: 'NOT_IMPLEMENTED',
-      },
-      HttpStatus.NOT_IMPLEMENTED,
+  async getHalaman(nomor: number): Promise<ResponsePayload<unknown>> {
+    if (nomor < 1 || nomor > 604) {
+      throw new HttpException(
+        { message: 'Nomor halaman harus 1-604', error: 'BAD_REQUEST' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const { data, cached } = await this.redis.remember(
+      CacheKey.halaman(nomor),
+      CacheTtl.AYAT,
+      () =>
+        this.prisma.ayat.findMany({
+          where: { halaman: nomor },
+          orderBy: [{ surahId: 'asc' }, { nomorAyat: 'asc' }],
+          include: { surah: { select: { nomor: true, namaLatin: true } } },
+        }),
     );
+    if ((data as unknown[]).length === 0) {
+      // Either an empty page (none exist) or page data not seeded yet.
+      throw new NotFoundException({
+        message: `Tidak ada ayat untuk halaman ${nomor}. Pastikan data halaman sudah di-seed (QURAN_PAGE_ENABLED).`,
+        error: 'NOT_FOUND',
+      });
+    }
+    return ok(data, `Ayat halaman ${nomor} berhasil diambil`, {
+      halaman: nomor,
+      total: (data as unknown[]).length,
+      cached,
+    });
   }
 
   async getRandom(): Promise<ResponsePayload<unknown>> {

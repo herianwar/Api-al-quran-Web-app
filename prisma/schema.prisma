@@ -36,6 +36,8 @@ model Ayat {
   teksLatin     String @db.Text
   teksIndonesia String @db.Text
   audioUrls     Json // { "01": url, ..., "06": url }
+  juz           Int? // 1-30
+  halaman       Int? // nomor halaman mushaf (1-604)
 
   surah      Surah        @relation(fields: [surahId], references: [id], onDelete: Cascade)
   tafsirAyat TafsirAyat[]
@@ -44,6 +46,8 @@ model Ayat {
 
   @@unique([surahId, nomorAyat])
   @@index([surahId])
+  @@index([halaman])
+  @@index([juz])
   @@map("ayat")
 }
 

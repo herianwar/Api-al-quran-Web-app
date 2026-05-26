@@ -19,6 +19,10 @@ export interface AppConfig {
     baseUrl: string;
     requestDelayMs: number;
   };
+  quranPage: {
+    baseUrl: string;
+    enabled: boolean;
+  };
   seedAdminKey: string;
   throttle: {
     ttl: number;
@@ -46,6 +50,11 @@ export default (): AppConfig => ({
   equran: {
     baseUrl: process.env.EQURAN_BASE_URL ?? 'https://equran.id/api/v2',
     requestDelayMs: parseInt(process.env.EQURAN_REQUEST_DELAY_MS ?? '250', 10),
+  },
+  quranPage: {
+    baseUrl:
+      process.env.QURAN_PAGE_BASE_URL ?? 'https://api.quran.com/api/v4',
+    enabled: (process.env.QURAN_PAGE_ENABLED ?? 'true') !== 'false',
   },
   seedAdminKey: process.env.SEED_ADMIN_KEY ?? 'change-me-seed-admin-key',
   throttle: {

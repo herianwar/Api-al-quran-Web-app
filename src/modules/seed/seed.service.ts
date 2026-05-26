@@ -203,7 +203,15 @@ export class SeedService {
             continue;
           }
 
+          // Page/juz numbers come from a supplementary source (Quran.com);
+          // empty map when disabled or unreachable — columns stay null.
+          const pageInfo = await this.equran.getAyatPageInfo(nomor);
+          const pageByAyat = new Map(
+            pageInfo.map((p) => [p.nomorAyat, p]),
+          );
+
           for (const a of detail.ayat) {
+            const meta = pageByAyat.get(a.nomorAyat);
             await this.prisma.ayat.upsert({
               where: {
                 surahId_nomorAyat: {
@@ -218,12 +226,16 @@ export class SeedService {
                 teksLatin: a.teksLatin,
                 teksIndonesia: a.teksIndonesia,
                 audioUrls: (a.audio ?? {}) as Prisma.InputJsonValue,
+                juz: meta?.juz ?? null,
+                halaman: meta?.page ?? null,
               },
               update: {
                 teksArab: a.teksArab,
                 teksLatin: a.teksLatin,
                 teksIndonesia: a.teksIndonesia,
                 audioUrls: (a.audio ?? {}) as Prisma.InputJsonValue,
+                ...(meta?.juz != null ? { juz: meta.juz } : {}),
+                ...(meta?.page != null ? { halaman: meta.page } : {}),
               },
             });
             totalAyat++;
@@ -256,6 +268,8 @@ export class SeedService {
 
       await this.redis.delByPattern('surah:*');
       await this.redis.delByPattern('ayat:*');
+      await this.redis.delByPattern('juz:*');
+      await this.redis.delByPattern('halaman:*');
       await this.markDone(job, totalAyat, startedAt);
     } catch (error) {
       await this.markError(job, (error as Error).message);

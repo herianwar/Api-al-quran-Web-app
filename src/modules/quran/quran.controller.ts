@@ -39,7 +39,7 @@ export class QuranController {
   }
 
   @Get('halaman/:nomor')
-  @ApiOperation({ summary: 'Ayat per halaman (1-604) — belum tersedia' })
+  @ApiOperation({ summary: 'Ayat per halaman mushaf (1-604)' })
   getHalaman(@Param('nomor', ParseIntPipe) nomor: number) {
     return this.quranService.getHalaman(nomor);
   }

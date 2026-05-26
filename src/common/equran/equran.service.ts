@@ -10,11 +10,20 @@ import {
 } from './equran.types';
 
 /** HTTP client for equran.id API v2 (used by seeding + lazy sholat fetch). */
+export interface AyatPageInfo {
+  /** verse_number within the surah */
+  nomorAyat: number;
+  page?: number;
+  juz?: number;
+}
+
 @Injectable()
 export class EquranService {
   private readonly logger = new Logger(EquranService.name);
   private readonly http: AxiosInstance;
+  private readonly pageHttp: AxiosInstance;
   private readonly delayMs: number;
+  private readonly pageEnabled: boolean;
 
   constructor(private readonly config: ConfigService) {
     const baseURL = this.config.get<string>('equran.baseUrl');
@@ -24,6 +33,17 @@ export class EquranService {
       timeout: 20000,
       headers: { Accept: 'application/json', 'User-Agent': 'quran-api/1.0' },
     });
+
+    this.pageEnabled = this.config.get<boolean>('quranPage.enabled') ?? true;
+    this.pageHttp = axios.create({
+      baseURL: this.config.get<string>('quranPage.baseUrl'),
+      timeout: 20000,
+      headers: { Accept: 'application/json', 'User-Agent': 'quran-api/1.0' },
+    });
+  }
+
+  isPageSourceEnabled(): boolean {
+    return this.pageEnabled;
   }
 
   delay(ms = this.delayMs): Promise<void> {
@@ -85,6 +105,36 @@ export class EquranService {
       '/doa',
     );
     return res.data;
+  }
+
+  /**
+   * Fetch page (mushaf) and juz number per ayat for one surah from Quran.com
+   * API v4. equran.id v2 does not expose this metadata. Returns [] when the
+   * page source is disabled or the request fails (seeding continues).
+   */
+  async getAyatPageInfo(chapter: number): Promise<AyatPageInfo[]> {
+    if (!this.pageEnabled) return [];
+    try {
+      const { data } = await this.pageHttp.get<{
+        verses: Array<{
+          verse_number: number;
+          page_number?: number;
+          juz_number?: number;
+        }>;
+      }>(`/verses/by_chapter/${chapter}`, {
+        params: { fields: 'page_number,juz_number', per_page: 300 },
+      });
+      return (data.verses ?? []).map((v) => ({
+        nomorAyat: v.verse_number,
+        page: v.page_number,
+        juz: v.juz_number,
+      }));
+    } catch (error) {
+      this.logger.warn(
+        `Gagal fetch page info surat ${chapter}: ${(error as Error).message}`,
+      );
+      return [];
+    }
   }
 
   /** Raw kota list payload; shape varies, callers map defensively. */
