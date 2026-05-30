@@ -54,7 +54,12 @@ async function getJson<T>(path: string): Promise<T | null> {
   try {
     const res = await fetch(`${API}${path}`, {
       next: { revalidate: REVALIDATE },
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(process.env.NEXT_PUBLIC_API_KEY
+          ? { "x-api-key": process.env.NEXT_PUBLIC_API_KEY }
+          : {}),
+      },
     });
     if (!res.ok) return null;
     const env = (await res.json()) as { data?: T };

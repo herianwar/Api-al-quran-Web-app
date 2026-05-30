@@ -3,6 +3,11 @@ import type { ApiMeta } from './types';
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
 
+/** API key required by the backend on every request (header x-api-key).
+ * Baked at build from NEXT_PUBLIC_API_KEY. Browsers also carry it as the
+ * `api_key` cookie (set in the root layout) so media elements work. */
+export const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? '';
+
 // Token storage strategy
 // ----------------------
 // • Access token lives ONLY in memory (this module's closure). It is never
@@ -77,6 +82,7 @@ async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
+  if (API_KEY) headers.set('x-api-key', API_KEY);
   const token = tokenStore.access;
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return fetch(url, { ...init, headers });
@@ -98,7 +104,10 @@ export function tryRefresh(): Promise<boolean> {
     try {
       const res = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+        },
         body: JSON.stringify({ refreshToken: refresh }),
       });
       if (!res.ok) return false;

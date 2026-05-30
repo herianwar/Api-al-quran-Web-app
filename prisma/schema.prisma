@@ -33,6 +33,7 @@ model Ayat {
   surahId       Int
   nomorAyat     Int
   teksArab      String  @db.Text
+  teksArabTajwid String? @db.Text  // HTML tajwid markup from Quran.com (span.tj-RULE)
   teksLatin     String  @db.Text
   teksIndonesia String  @db.Text
   audioUrls     Json // { "01": url, ..., "06": url }

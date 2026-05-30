@@ -160,6 +160,50 @@ export class EquranService {
   }
 
   /**
+   * Fetch Uthmani tajwid (colored) text per ayat for one surah from Quran.com
+   * API v4 and convert it to namespaced span markup. Returns an empty map when
+   * disabled or on failure (seeding continues without tajwid).
+   */
+  async getAyatTajweed(chapter: number): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    if (!this.pageEnabled) return out;
+    try {
+      const { data } = await this.pageHttp.get<{
+        verses: Array<{ verse_key: string; text_uthmani_tajweed?: string }>;
+      }>(`/quran/verses/uthmani_tajweed`, {
+        params: { chapter_number: chapter, per_page: 300 },
+      });
+      for (const v of data.verses ?? []) {
+        const ayat = Number(v.verse_key?.split(':')[1]);
+        if (!ayat || !v.text_uthmani_tajweed) continue;
+        out.set(ayat, this.transformTajweed(v.text_uthmani_tajweed));
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Gagal fetch tajwid surat ${chapter}: ${(error as Error).message}`,
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Convert Quran.com tajwid markup into sanitised, namespaced span markup:
+   *   <tajweed class=RULE>X</tajweed>  ->  <span class="tj tj-RULE">X</span>
+   * Verse-end numerals (<span class=end>N</span>) are dropped since the UI
+   * renders ayat numbers separately.
+   */
+  private transformTajweed(html: string): string {
+    return html
+      .replace(/<span class=end>.*?<\/span>/g, '')
+      .replace(
+        /<tajweed class=([a-z_]+)>/g,
+        (_m, rule: string) => `<span class="tj tj-${rule}">`,
+      )
+      .replace(/<\/tajweed>/g, '</span>')
+      .trim();
+  }
+
+  /**
    * Raw kota list payload from myquran.com (`{data:[{id,lokasi}]}`); callers
    * map defensively.
    */

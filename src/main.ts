@@ -329,9 +329,17 @@ function enrichResponseSchemas(document: OpenAPIObject): void {
           content: { 'application/json': { schema: { type: 'object' } } },
         };
       } else {
+        // Preserve a richer success schema the controller already declared via
+        // @ApiOkResponse (e.g. ApiSuccess + data:AyatEntity). Only fall back to
+        // the bare ApiSuccess envelope when no JSON schema was set.
+        const existingSchema = (responses[okCode] as any)?.content?.[
+          'application/json'
+        ]?.schema;
         responses[okCode] = {
           description: prevDesc && prevDesc.length ? prevDesc : 'Sukses',
-          content: okJson,
+          content: existingSchema
+            ? { 'application/json': { schema: existingSchema } }
+            : okJson,
         };
       }
 

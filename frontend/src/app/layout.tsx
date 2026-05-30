@@ -31,6 +31,16 @@ export default function RootLayout({
         />
         {/* Site-wide Organization / WebSite structured data (from /). */}
         <SeoJsonLd path="/" />
+        {/* Drop the API key into a same-origin cookie BEFORE hydration so it
+            rides along on media requests (<audio>/<img>) where custom headers
+            are impossible. Data fetches send it via the x-api-key header. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var k=${JSON.stringify(
+              process.env.NEXT_PUBLIC_API_KEY ?? "",
+            )};if(k&&document.cookie.indexOf("api_key=")===-1){document.cookie="api_key="+k+";path=/;max-age=31536000;samesite=lax"+(location.protocol==="https:"?";secure":"")}}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className="min-h-full flex flex-col pb-[68px] sm:pb-0">
         <AuthProvider>

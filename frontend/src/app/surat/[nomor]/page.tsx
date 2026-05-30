@@ -33,6 +33,7 @@ import type {
 } from "@/lib/types";
 import { AyatItem } from "@/components/AyatItem";
 import { ErrorBox, Spinner } from "@/components/Spinner";
+import { TAJWID_LEGEND } from "@/lib/tajwid";
 
 export default function SuratPage() {
   const params = useParams<{ nomor: string }>();
@@ -142,12 +143,14 @@ export default function SuratPage() {
     arabicScale: number; // multiplier applied to .arabic-body via --arabic-scale
     showLatin: boolean;
     showTranslation: boolean;
+    showTajwid: boolean; // colored tajwid rules on the Arabic text
     continuous: boolean; // auto-advance to the next ayat when audio ends
   }
   const DEFAULT_PREFS: ReaderPrefs = {
     arabicScale: 1,
     showLatin: true,
     showTranslation: true,
+    showTajwid: true,
     continuous: true,
   };
   const [prefs, setPrefs] = useState<ReaderPrefs>(DEFAULT_PREFS);
@@ -179,6 +182,7 @@ export default function SuratPage() {
   // Toolbar / chrome UI state.
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showTajwidLegend, setShowTajwidLegend] = useState(false);
   const [scrollPct, setScrollPct] = useState(0);
   const [showTopBtn, setShowTopBtn] = useState(false);
 
@@ -644,6 +648,7 @@ export default function SuratPage() {
                 [
                   ["showLatin", "Latin"],
                   ["showTranslation", "Terjemahan"],
+                  ["showTajwid", "Tajwid"],
                   ["continuous", "Putar berurutan"],
                 ] as const
               ).map(([key, label]) => {
@@ -725,6 +730,47 @@ export default function SuratPage() {
         )}
       </div>
 
+      {prefs.showTajwid && (
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white">
+          <button
+            onClick={() => setShowTajwidLegend((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700"
+            aria-expanded={showTajwidLegend}
+          >
+            <span>Keterangan Warna Tajwid</span>
+            <span className="text-slate-400">
+              {showTajwidLegend ? "−" : "+"}
+            </span>
+          </button>
+          {showTajwidLegend && (
+            <div className="grid grid-cols-1 gap-2 border-t border-slate-100 px-4 py-3 sm:grid-cols-2">
+              {TAJWID_LEGEND.map((r) => (
+                <div key={r.cls} className="flex items-start gap-2">
+                  <span
+                    className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: r.color }}
+                  />
+                  <div>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {r.label}
+                    </span>
+                    {r.desc && (
+                      <p className="text-[12px] leading-snug text-slate-500">
+                        {r.desc}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <p className="col-span-full mt-1 text-[12px] text-slate-400">
+                Tip: ketuk huruf berwarna pada ayat untuk melihat nama
+                kaidahnya.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div
         className="space-y-3"
         style={{ ["--arabic-scale" as string]: prefs.arabicScale }}
@@ -737,6 +783,7 @@ export default function SuratPage() {
             onTogglePlay={() => togglePlayAyat(ayat)}
             showLatin={prefs.showLatin}
             showTranslation={prefs.showTranslation}
+            showTajwid={prefs.showTajwid}
             tafsirText={tafsirByAyat.get(ayat.nomorAyat)}
             showTafsir={openTafsir.has(ayat.nomorAyat)}
             onToggleTafsir={() => toggleTafsir(ayat.nomorAyat)}

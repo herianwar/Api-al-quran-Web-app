@@ -491,9 +491,11 @@ export class SeedService implements OnModuleInit {
           const pageByAyat = new Map(
             pageInfo.map((p) => [p.nomorAyat, p]),
           );
+          const tajwidMap = await this.equran.getAyatTajweed(surah.nomor);
 
           for (const a of detail.ayat) {
             const meta = pageByAyat.get(a.nomorAyat);
+            const tajwid = tajwidMap.get(a.nomorAyat) ?? null;
             await this.prisma.ayat.upsert({
               where: {
                 surahId_nomorAyat: {
@@ -505,6 +507,7 @@ export class SeedService implements OnModuleInit {
                 surahId: surah.id,
                 nomorAyat: a.nomorAyat,
                 teksArab: a.teksArab,
+                teksArabTajwid: tajwid,
                 teksLatin: a.teksLatin,
                 teksIndonesia: a.teksIndonesia,
                 audioUrls: (a.audio ?? {}) as Prisma.InputJsonValue,
@@ -513,6 +516,7 @@ export class SeedService implements OnModuleInit {
               },
               update: {
                 teksArab: a.teksArab,
+                teksArabTajwid: tajwid,
                 teksLatin: a.teksLatin,
                 teksIndonesia: a.teksIndonesia,
                 audioUrls: (a.audio ?? {}) as Prisma.InputJsonValue,

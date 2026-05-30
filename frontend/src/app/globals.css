@@ -371,3 +371,25 @@ body {
   font-weight: 700;
   color: var(--foreground);
 }
+
+/* ── Tajwid rule colors (Quran.com markup → span.tj-RULE) ── */
+.tj { font: inherit; }
+.tj-ham_wasl,
+.tj-slnt,
+.tj-laam_shamsiyah { color: #AAAAAA; }                 /* hamzat wasl / silent / lam shamsiyah */
+.tj-madda_normal { color: #537FFF; }                    /* mad asli 2 harakat */
+.tj-madda_permissible { color: #4050FF; }               /* mad jaiz 2/4/6 */
+.tj-madda_necessary { color: #000EBC; }                 /* mad lazim 6 */
+.tj-madda_obligatory,
+.tj-madda_obligatory_monfasel,
+.tj-madda_obligatory_mottasel { color: #2144C1; }       /* mad wajib */
+.tj-qalqalah { color: #DD0008; }                        /* qalqalah */
+.tj-ikhafa,
+.tj-ikhafa_shafawi { color: #9400A8; }                  /* ikhfa */
+.tj-idgham_ghunnah,
+.tj-idgham_shafawi,
+.tj-idgham_mutajanisayn,
+.tj-idgham_mutaqaribayn,
+.tj-idgham_wo_ghunnah { color: #169200; }               /* idgham */
+.tj-iqlab { color: #26BFFD; }                           /* iqlab */
+.tj-ghunnah { color: #FF7E1E; }                         /* ghunnah */

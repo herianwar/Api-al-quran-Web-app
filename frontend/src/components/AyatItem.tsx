@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Ayat } from "@/lib/types";
+import { tajwidRule } from "@/lib/tajwid";
 
 interface Props {
   ayat: Ayat;
@@ -31,6 +32,7 @@ interface Props {
   /** Reader display preferences (set from the surah page toolbar). */
   showLatin?: boolean;
   showTranslation?: boolean;
+  showTajwid?: boolean;
 }
 
 function IconButton({
@@ -95,8 +97,12 @@ export function AyatItem({
   onDeleteNote,
   showLatin = true,
   showTranslation = true,
+  showTajwid = true,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [activeRule, setActiveRule] = useState<
+    ReturnType<typeof tajwidRule> | null
+  >(null);
 
   const surahNomor = ayat.surah?.nomor;
   const ayatRef =
@@ -293,9 +299,52 @@ export function AyatItem({
         </div>
       </div>
 
-      <p className="arabic arabic-body text-right text-slate-900 mb-5">
-        {ayat.teksArab}
-      </p>
+      {showTajwid && ayat.teksArabTajwid ? (
+        <p
+          className="arabic arabic-body text-right text-slate-900 mb-5 cursor-pointer"
+          onClick={(e) => {
+            const el = (e.target as HTMLElement).closest("span.tj");
+            if (!el) {
+              setActiveRule(null);
+              return;
+            }
+            const cls = Array.from(el.classList).find((c) =>
+              c.startsWith("tj-"),
+            );
+            if (cls) setActiveRule(tajwidRule(cls.slice(3)));
+          }}
+          dangerouslySetInnerHTML={{ __html: ayat.teksArabTajwid }}
+        />
+      ) : (
+        <p className="arabic arabic-body text-right text-slate-900 mb-5">
+          {ayat.teksArab}
+        </p>
+      )}
+      {showTajwid && activeRule && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+          <span
+            className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full"
+            style={{ backgroundColor: activeRule.color }}
+          />
+          <div className="flex-1">
+            <span className="font-semibold text-slate-800">
+              {activeRule.label}
+            </span>
+            {activeRule.desc && (
+              <p className="mt-0.5 text-[13px] leading-snug text-slate-500">
+                {activeRule.desc}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setActiveRule(null)}
+            className="ml-1 text-slate-400 hover:text-slate-600"
+            aria-label="Tutup"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {showLatin && (
         <p className="text-sm text-slate-500 italic mb-2.5">{ayat.teksLatin}</p>
       )}

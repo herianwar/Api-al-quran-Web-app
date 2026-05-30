@@ -1,8 +1,9 @@
 # 🕌 Al-Quran Super App API
 
-API mandiri (self-hosted) untuk Al-Quran: surat, ayat, audio per qari, tafsir
-Kemenag, doa & dzikir, jadwal sholat, autentikasi, dan fitur user (bookmark,
-progres baca, hafalan dengan spaced-repetition).
+API mandiri (self-hosted) untuk Al-Quran: surat, ayat (termasuk teks Arab
+**bertajwid berwarna**), audio per qari, tafsir Kemenag, doa & dzikir, jadwal
+sholat, autentikasi, dan fitur user (bookmark, progres baca, hafalan dengan
+spaced-repetition).
 
 Data awal di-_seed_ dari [equran.id](https://equran.id) (dan nomor halaman/juz
 dari [Quran.com](https://quran.com)), lalu disimpan di PostgreSQL milik sendiri
@@ -287,7 +288,7 @@ Prefix: `/api/v1`. Format response: `{ success, message, data, meta? }`.
 
 | Grup           | Endpoint |
 | -------------- | -------- |
-| Quran          | `GET /quran/surat?since=`, `/quran/surat/:nomor`, `/quran/surat/:nomor/ayat/:ayat`, `/quran/juz/:nomor`, `/quran/halaman/:nomor`, `/quran/random`, `/quran/search?q=&lang=`, `/quran/dump` (full JSON untuk first-install Android) |
+| Quran          | `GET /quran/surat?since=`, `/quran/surat/:nomor`, `/quran/surat/:nomor/ayat/:ayat`, `/quran/juz/:nomor`, `/quran/halaman/:nomor`, `/quran/random`, `/quran/search?q=&lang=`, `/quran/dump` (full JSON untuk first-install Android). Tiap ayat punya `teksArabTajwid` — teks Arab bertajwid (`<span class="tj tj-<kaidah>">`), di-seed dari Quran.com & disajikan self-hosted dari DB |
 | Audio          | `GET /audio/surat/:nomor?qari=`, `/audio/ayat/:surat/:ayat?qari=`, `/audio/qari`, **`/audio/stream/:qari/surah/:nomor`** (proxy MP3), **`/audio/stream/:qari/ayat/:surat/:ayat`** |
 | Tafsir         | `GET /tafsir/list`, `/tafsir/:surat`, `/tafsir/:surat/:ayat` |
 | Translation    | `GET /translation/list`, `/translation/:sumber/:surat`, `/translation/:sumber/:surat/:ayat` — sumber: `sahih-international`, `pickthall`, `kemenag-2019` |

@@ -23,6 +23,7 @@ export interface Ayat {
   surahId: number;
   nomorAyat: number;
   teksArab: string;
+  teksArabTajwid?: string | null;
   teksLatin: string;
   teksIndonesia: string;
   audioUrls?: Record<string, string>;

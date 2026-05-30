@@ -29,7 +29,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const res = await fetch(`${API}/seo/sitemap`, {
       next: { revalidate: 900 },
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(process.env.NEXT_PUBLIC_API_KEY
+          ? { "x-api-key": process.env.NEXT_PUBLIC_API_KEY }
+          : {}),
+      },
     });
     if (res.ok) {
       const env = (await res.json()) as { data?: Entry[] };

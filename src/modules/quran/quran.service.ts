@@ -421,6 +421,7 @@ export class QuranService {
           select: {
             nomorAyat: true,
             teksArab: true,
+            teksArabTajwid: true,
             teksLatin: true,
             teksIndonesia: true,
             juz: true,
