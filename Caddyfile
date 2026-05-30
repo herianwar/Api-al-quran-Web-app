@@ -1,0 +1,32 @@
+# Caddy config — Caddy otomatis dapat SSL dari Let's Encrypt.
+# Ganti `quran.yourdomain.com` dan `api.yourdomain.com` dengan domain Anda.
+#
+# Pastikan domain sudah mengarah ke IP VPS (A record), lalu jalankan
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Caddy akan auto-fetch SSL cert 60 detik kemudian.
+
+# Frontend
+quran.yourdomain.com {
+	encode gzip zstd
+	reverse_proxy web:3001 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# Backend API
+api.yourdomain.com {
+	encode gzip zstd
+	# Tambahkan rate limit dasar di reverse proxy biar backend ga overload
+	reverse_proxy app:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		# Long timeout untuk endpoint yang lama (seed warm audio, snapshot)
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+}

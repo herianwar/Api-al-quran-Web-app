@@ -64,21 +64,46 @@ export class AuthService {
     });
     if (!stored || stored.expiresAt < new Date()) {
       if (stored) {
-        await this.prisma.refreshToken.delete({ where: { id: stored.id } });
+        await this.prisma.refreshToken
+          .delete({ where: { id: stored.id } })
+          .catch(() => undefined);
       }
       throw new UnauthorizedException({
         message: 'Refresh token tidak valid atau kedaluwarsa',
         error: 'UNAUTHORIZED',
       });
     }
-    // Rotate: delete old, issue new pair.
-    await this.prisma.refreshToken.delete({ where: { id: stored.id } });
-    const tokens = await this.issueTokens(
-      stored.user.id,
-      stored.user.email,
-      stored.user.role,
+    // Rotate atomically: delete old token and insert new one in the same
+    // transaction. The JWT access token is signed outside the tx (no DB
+    // side-effect) and the new refresh token row is persisted inside.
+    const accessToken = await this.jwt.signAsync({
+      sub: stored.user.id,
+      email: stored.user.email,
+      role: stored.user.role,
+    } satisfies JwtPayload);
+    const newRefreshToken = randomBytes(48).toString('hex');
+    const ttlMs = this.parseDuration(
+      this.config.get<string>('jwt.refreshExpiresIn') ?? '7d',
     );
-    return ok(tokens, 'Token berhasil diperbarui');
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.delete({ where: { id: stored.id } }),
+      this.prisma.refreshToken.create({
+        data: {
+          userId: stored.user.id,
+          token: newRefreshToken,
+          expiresAt: new Date(Date.now() + ttlMs),
+        },
+      }),
+    ]);
+    return ok(
+      {
+        accessToken,
+        refreshToken: newRefreshToken,
+        tokenType: 'Bearer',
+        expiresIn: this.config.get<string>('jwt.expiresIn'),
+      },
+      'Token berhasil diperbarui',
+    );
   }
 
   async logout(refreshToken: string): Promise<ResponsePayload<unknown>> {
@@ -131,7 +156,7 @@ export class AuthService {
   }
 
   private parseDuration(str: string): number {
-    const match = /^(\d+)\s*([smhd])$/.exec(str.trim());
+    const match = /^(\d+)([smhd])$/.exec(str.trim());
     if (!match) return 7 * 24 * 60 * 60 * 1000;
     const value = parseInt(match[1], 10);
     const unit = match[2];

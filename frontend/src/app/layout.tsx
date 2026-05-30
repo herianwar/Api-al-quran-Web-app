@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { AnalyticsTracker } from "@/components/AnalyticsTracker";
+import { BottomNav } from "@/components/BottomNav";
 import { Navbar } from "@/components/Navbar";
+import { SeoJsonLd } from "@/components/SeoJsonLd";
+import { SiteAnalytics } from "@/components/SiteAnalytics";
+import { buildRootMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Al-Qur'an Super App",
-  description:
-    "Baca Al-Qur'an, dengarkan murottal, tafsir Kemenag, doa & dzikir, dan jadwal sholat. Lengkap dengan bookmark dan hafalan.",
-};
+export function generateMetadata(): Promise<Metadata> {
+  return buildRootMetadata();
+}
 
 export default function RootLayout({
   children,
@@ -17,26 +20,30 @@ export default function RootLayout({
   return (
     <html lang="id" className="h-full antialiased">
       <head>
-        {/* Arabic font loaded in the browser (not at build time) */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        {/* Arabic typography is self-hosted in /fonts/ — see globals.css
+            @font-face declarations. No external font CDN at runtime. */}
         <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
+          rel="preload"
+          href="/fonts/amiri-quran-arabic.woff2"
+          as="font"
+          type="font/woff2"
           crossOrigin="anonymous"
         />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap"
-        />
+        {/* Site-wide Organization / WebSite structured data (from /). */}
+        <SeoJsonLd path="/" />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col pb-[68px] sm:pb-0">
         <AuthProvider>
+          <AnalyticsTracker />
           <Navbar />
           <main className="flex-1">{children}</main>
-          <footer className="border-t border-emerald-900/10 py-6 text-center text-sm text-emerald-900/50">
-            Al-Qur&apos;an Super App · Data: equran.id &amp; Quran.com
+          <footer className="border-t border-slate-200 bg-white/60 py-6 text-center text-sm text-slate-500">
+            © {new Date().getFullYear()} Rumah Qur&apos;an · Bacaan,
+            tafsir, doa & ibadah harian dalam satu tempat.
           </footer>
+          <BottomNav />
         </AuthProvider>
+        <SiteAnalytics />
       </body>
     </html>
   );

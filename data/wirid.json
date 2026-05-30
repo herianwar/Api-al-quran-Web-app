@@ -1,0 +1,159 @@
+{
+  "pagi": [
+    {
+      "judul": "Ayat Kursi",
+      "arab": "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَن ذَا الَّذِي يَشْفَعُ عِندَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِّنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ",
+      "latin": "Allāhu lā ilāha illā huwal-ḥayyul-qayyūm…",
+      "terjemah": "Allah, tidak ada Tuhan selain Dia, Yang Maha Hidup, Yang terus menerus mengurus makhluk-Nya…",
+      "sumber": "Q.S. Al-Baqarah: 255",
+      "hitungan": 1,
+      "urutan": 1
+    },
+    {
+      "judul": "Surat Al-Ikhlas",
+      "arab": "قُلْ هُوَ اللَّهُ أَحَدٌ ۝ اللَّهُ الصَّمَدُ ۝ لَمْ يَلِدْ وَلَمْ يُولَدْ ۝ وَلَمْ يَكُن لَّهُ كُفُوًا أَحَدٌ",
+      "latin": "Qul huwallāhu aḥad, Allāhuṣ-ṣamad, lam yalid wa lam yūlad, wa lam yakun lahu kufuwan aḥad",
+      "terjemah": "Katakanlah: Dialah Allah Yang Maha Esa…",
+      "sumber": "Q.S. Al-Ikhlas",
+      "hitungan": 3,
+      "urutan": 2
+    },
+    {
+      "judul": "Surat Al-Falaq",
+      "arab": "قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ۝ مِن شَرِّ مَا خَلَقَ ۝ وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ ۝ وَمِن شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ ۝ وَمِن شَرِّ حَاسِدٍ إِذَا حَسَدَ",
+      "latin": "Qul a'ūdzu birabbil-falaq…",
+      "terjemah": "Aku berlindung kepada Tuhan Yang Menguasai Subuh…",
+      "sumber": "Q.S. Al-Falaq",
+      "hitungan": 3,
+      "urutan": 3
+    },
+    {
+      "judul": "Surat An-Naas",
+      "arab": "قُلْ أَعُوذُ بِرَبِّ النَّاسِ ۝ مَلِكِ النَّاسِ ۝ إِلَٰهِ النَّاسِ ۝ مِن شَرِّ الْوَسْوَاسِ الْخَنَّاسِ ۝ الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ ۝ مِنَ الْجِنَّةِ وَالنَّاسِ",
+      "latin": "Qul a'ūdzu birabbin-nās…",
+      "terjemah": "Aku berlindung kepada Tuhan (yang memelihara dan menguasai) manusia…",
+      "sumber": "Q.S. An-Naas",
+      "hitungan": 3,
+      "urutan": 4
+    },
+    {
+      "judul": "Asbahna Wa Asbahal Mulku Lillah",
+      "arab": "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
+      "latin": "Aṣbaḥnā wa aṣbaḥal-mulku lillāh, wal-ḥamdu lillāh, lā ilāha illallāh waḥdahu lā syarīka lah, lahul-mulku wa lahul-ḥamdu wa huwa 'alā kulli syai'in qadīr",
+      "terjemah": "Kami telah memasuki pagi dan kerajaan hanya milik Allah, segala puji bagi Allah…",
+      "sumber": "HR. Muslim",
+      "hitungan": 1,
+      "urutan": 5
+    },
+    {
+      "judul": "Sayyidul Istighfar",
+      "arab": "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ",
+      "latin": "Allāhumma anta rabbī…",
+      "terjemah": "Ya Allah, Engkau adalah Tuhanku, tidak ada tuhan selain Engkau…",
+      "sumber": "HR. Bukhari",
+      "hitungan": 1,
+      "urutan": 6
+    },
+    {
+      "judul": "Subhanallahi Wa Bihamdihi",
+      "arab": "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ",
+      "latin": "Subḥānallāhi wa biḥamdih",
+      "terjemah": "Maha suci Allah dan dengan memuji-Nya.",
+      "sumber": "HR. Muslim",
+      "hitungan": 100,
+      "urutan": 7
+    },
+    {
+      "judul": "Tasbih, Tahmid, Takbir",
+      "arab": "سُبْحَانَ اللَّهِ، وَالْحَمْدُ لِلَّهِ، وَلَا إِلَهَ إِلَّا اللَّهُ، وَاللَّهُ أَكْبَرُ",
+      "latin": "Subḥānallāh, walḥamdulillāh, walā ilāha illallāh, wallāhu akbar",
+      "terjemah": "Maha suci Allah, segala puji bagi Allah, tidak ada tuhan selain Allah, Allah Maha Besar.",
+      "sumber": "HR. Muslim",
+      "hitungan": 33,
+      "urutan": 8
+    },
+    {
+      "judul": "Doa Pagi: Allahumma bika asbahna",
+      "arab": "اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ",
+      "latin": "Allāhumma bika aṣbaḥnā, wa bika amsainā, wa bika naḥyā, wa bika namūtu, wa ilaikan-nusyūr",
+      "terjemah": "Ya Allah, dengan-Mu kami memasuki pagi, dengan-Mu kami memasuki sore, dengan-Mu kami hidup, dengan-Mu kami mati, dan kepada-Mu kami kembali.",
+      "sumber": "HR. Tirmidzi",
+      "hitungan": 1,
+      "urutan": 9
+    }
+  ],
+  "petang": [
+    {
+      "judul": "Ayat Kursi (Petang)",
+      "arab": "اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ...",
+      "latin": "Allāhu lā ilāha illā huwal-ḥayyul-qayyūm…",
+      "terjemah": "Allah, tidak ada Tuhan selain Dia, Yang Maha Hidup…",
+      "sumber": "Q.S. Al-Baqarah: 255",
+      "hitungan": 1,
+      "urutan": 1
+    },
+    {
+      "judul": "Al-Ikhlas, Al-Falaq, An-Naas",
+      "arab": "قُلْ هُوَ اللَّهُ أَحَدٌ... قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ... قُلْ أَعُوذُ بِرَبِّ النَّاسِ...",
+      "latin": "Qul huwallāhu aḥad… Qul a'ūdzu birabbil-falaq… Qul a'ūdzu birabbin-nās…",
+      "terjemah": "Membaca surat Al-Ikhlas, Al-Falaq, dan An-Naas masing-masing 3 kali.",
+      "sumber": "HR. Abu Dawud, Tirmidzi",
+      "hitungan": 3,
+      "urutan": 2
+    },
+    {
+      "judul": "Amsayna wa Amsal Mulku Lillah",
+      "arab": "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
+      "latin": "Amsainā wa amsal-mulku lillāh, walḥamdulillāh…",
+      "terjemah": "Kami telah memasuki sore dan kerajaan hanya milik Allah…",
+      "sumber": "HR. Muslim",
+      "hitungan": 1,
+      "urutan": 3
+    },
+    {
+      "judul": "Sayyidul Istighfar",
+      "arab": "اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ...",
+      "latin": "Allāhumma anta rabbī lā ilāha illā ant…",
+      "terjemah": "Ya Allah, Engkau adalah Tuhanku, tidak ada tuhan selain Engkau…",
+      "sumber": "HR. Bukhari",
+      "hitungan": 1,
+      "urutan": 4
+    },
+    {
+      "judul": "A'udzu bi kalimatillah",
+      "arab": "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ",
+      "latin": "A'ūdzu bi kalimātillāhit-tāmmāti min syarri mā khalaq",
+      "terjemah": "Aku berlindung dengan kalimat-kalimat Allah yang sempurna dari kejahatan apa pun yang Dia ciptakan.",
+      "sumber": "HR. Muslim",
+      "hitungan": 3,
+      "urutan": 5
+    },
+    {
+      "judul": "Bismillahilladzi la yadhurru",
+      "arab": "بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ، وَهُوَ السَّمِيعُ الْعَلِيمُ",
+      "latin": "Bismillāhil-ladzī lā yaḍurru ma'asmihī syai'un fil-arḍi wa lā fīs-samā', wa huwas-samī'ul 'alīm",
+      "terjemah": "Dengan nama Allah yang dengan nama-Nya tiada sesuatu pun di bumi atau di langit yang dapat memberi mudarat. Dia Maha Mendengar lagi Maha Mengetahui.",
+      "sumber": "HR. Abu Dawud, Tirmidzi",
+      "hitungan": 3,
+      "urutan": 6
+    },
+    {
+      "judul": "Subhanallahi Wa Bihamdihi",
+      "arab": "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ",
+      "latin": "Subḥānallāhi wa biḥamdih",
+      "terjemah": "Maha suci Allah dan dengan memuji-Nya.",
+      "sumber": "HR. Muslim",
+      "hitungan": 100,
+      "urutan": 7
+    },
+    {
+      "judul": "Doa Petang: Allahumma bika amsayna",
+      "arab": "اللَّهُمَّ بِكَ أَمْسَيْنَا، وَبِكَ أَصْبَحْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ الْمَصِيرُ",
+      "latin": "Allāhumma bika amsainā, wa bika aṣbaḥnā…",
+      "terjemah": "Ya Allah, dengan-Mu kami memasuki sore, dengan-Mu kami memasuki pagi…",
+      "sumber": "HR. Tirmidzi",
+      "hitungan": 1,
+      "urutan": 8
+    }
+  ]
+}

@@ -3,7 +3,7 @@
  * marking the end of the Quran. Used to compute which ayat fall in a juz, since
  * equran.id v2 does not return juz metadata per ayat.
  */
-export const JUZ_START: Array<{ surah: number; ayat: number }> = [
+export const JUZ_START = [
   { surah: 1, ayat: 1 }, // Juz 1
   { surah: 2, ayat: 142 }, // 2
   { surah: 2, ayat: 253 }, // 3
@@ -35,7 +35,7 @@ export const JUZ_START: Array<{ surah: number; ayat: number }> = [
   { surah: 67, ayat: 1 }, // 29
   { surah: 78, ayat: 1 }, // 30
   { surah: 115, ayat: 1 }, // sentinel (end of Quran)
-];
+] as const satisfies ReadonlyArray<{ surah: number; ayat: number }>;
 
 /** The six qari available in equran.id v2 audio objects. */
 export const QARI_LIST = [

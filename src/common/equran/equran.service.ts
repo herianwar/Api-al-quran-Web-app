@@ -22,6 +22,7 @@ export class EquranService {
   private readonly logger = new Logger(EquranService.name);
   private readonly http: AxiosInstance;
   private readonly pageHttp: AxiosInstance;
+  private readonly sholatHttp: AxiosInstance;
   private readonly delayMs: number;
   private readonly pageEnabled: boolean;
 
@@ -40,6 +41,14 @@ export class EquranService {
       timeout: 20000,
       headers: { Accept: 'application/json', 'User-Agent': 'quran-api/1.0' },
     });
+
+    // City list + prayer schedule come from myquran.com (equran.id's /sholat
+    // endpoints now 404).
+    this.sholatHttp = axios.create({
+      baseURL: this.config.get<string>('sholat.baseUrl'),
+      timeout: 20000,
+      headers: { Accept: 'application/json', 'User-Agent': 'quran-api/1.0' },
+    });
   }
 
   isPageSourceEnabled(): boolean {
@@ -51,11 +60,15 @@ export class EquranService {
   }
 
   /** GET with a small retry/backoff for transient network/5xx failures. */
-  private async getWithRetry<T>(url: string, retries = 3): Promise<T> {
+  private async getWithRetry<T>(
+    url: string,
+    retries = 3,
+    client: AxiosInstance = this.http,
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const { data } = await this.http.get<T>(url);
+        const { data } = await client.get<T>(url);
         return data;
       } catch (error) {
         lastError = error;
@@ -101,10 +114,19 @@ export class EquranService {
   }
 
   async getDoa(): Promise<EquranDoaItem[]> {
-    const res = await this.getWithRetry<EquranEnvelope<EquranDoaItem[]>>(
-      '/doa',
-    );
-    return res.data;
+    // The legacy v2 endpoint at `/api/v2/doa` was deprecated and now 404s.
+    // The current public catalog lives at `/api/doa` and ships 227 items with
+    // the same field shape (id, nama, ar, tr, idn, tentang, grup, tag).
+    // Envelope differs ({status, total, data}) but only `.data` matters here.
+    const response = await axios.get<{
+      status?: unknown;
+      total?: number;
+      data: EquranDoaItem[];
+    }>('https://equran.id/api/doa', {
+      timeout: 30_000,
+      headers: { Accept: 'application/json', 'User-Agent': 'quran-api/1.0' },
+    });
+    return Array.isArray(response.data?.data) ? response.data.data : [];
   }
 
   /**
@@ -137,19 +159,28 @@ export class EquranService {
     }
   }
 
-  /** Raw kota list payload; shape varies, callers map defensively. */
+  /**
+   * Raw kota list payload from myquran.com (`{data:[{id,lokasi}]}`); callers
+   * map defensively.
+   */
   async getKotaListRaw(): Promise<unknown> {
-    return this.getWithRetry<unknown>('/sholat/kota');
+    return this.getWithRetry<unknown>('/sholat/kota/semua', 3, this.sholatHttp);
   }
 
-  /** Raw jadwal sholat payload; shape varies, callers map defensively. */
+  /**
+   * Raw monthly jadwal sholat from myquran.com
+   * (`/sholat/jadwal/{id}/{year}/{month}` → `{data:{lokasi,daerah,jadwal:[…]}}`);
+   * callers map defensively.
+   */
   async getJadwalSholat(
     kotaId: string,
     bulan: number,
     tahun: number,
   ): Promise<unknown> {
     return this.getWithRetry<unknown>(
-      `/sholat/kota/${kotaId}/${bulan}/${tahun}`,
+      `/sholat/jadwal/${kotaId}/${tahun}/${bulan}`,
+      3,
+      this.sholatHttp,
     );
   }
 }

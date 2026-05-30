@@ -1,5 +1,7 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ETagCacheable } from '../../common/decorators/etag.decorator';
+import { PaginationQueryDto } from '../../common/dto/pagination';
 import { DoaService } from './doa.service';
 
 @ApiTags('Doa')
@@ -8,9 +10,10 @@ export class DoaController {
   constructor(private readonly doaService: DoaService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Semua doa & dzikir' })
-  getAll() {
-    return this.doaService.getAll();
+  @ETagCacheable(86_400)
+  @ApiOperation({ summary: 'Semua doa & dzikir (paginated, ETag-cacheable)' })
+  getAll(@Query() pagination: PaginationQueryDto) {
+    return this.doaService.getAll(pagination);
   }
 
   @Get('random')
@@ -20,7 +23,8 @@ export class DoaController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '1 doa berdasarkan id' })
+  @ETagCacheable(604_800)
+  @ApiOperation({ summary: '1 doa berdasarkan id — ETag-cacheable' })
   getById(@Param('id', ParseIntPipe) id: number) {
     return this.doaService.getById(id);
   }

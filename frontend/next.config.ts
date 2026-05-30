@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  // Produce a minimal runtime bundle for Docker. `next start` from a
+  // standalone build only ships what was actually imported.
+  output: 'standalone',
 };
 
 export default nextConfig;

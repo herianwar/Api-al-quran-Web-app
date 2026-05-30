@@ -5,5 +5,6 @@ import { TafsirService } from './tafsir.service';
 @Module({
   controllers: [TafsirController],
   providers: [TafsirService],
+  exports: [TafsirService],
 })
 export class TafsirModule {}

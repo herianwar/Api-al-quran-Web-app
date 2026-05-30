@@ -1,0 +1,37 @@
+[
+  {
+    "id": "niatsubuh",
+    "arab": "اُصَلِّيْ فَرْضَ الصُّبْحِ رَكْعَتَيْنِ مُسْتَقْبِلَ الْقِبْلَةِ عَدَاءً لِلّهِ تَعَالَى",
+    "nama": "Sholat Subuh",
+    "latin": "Ushalli fardha shubhi rak'ataini mustaqbilal qiblati adaa'an lillahi ta'ala",
+    "arti": "Aku niat sholat fardhu subuh dua rakaat, menghadap kiblat, karena Allah Ta'ala"
+  },
+  {
+    "id": "niatdzuhur",
+    "arab": "اُصَلِّيْ فَرْضَ الظّهْرِ اَرْبَعَ رَكَعَاتٍ مُسْتَقْبِلَ الْقِبْلَةِ عَدَاءً لِلّهِ تَعَالَى",
+    "nama": "Sholat Dzuhur",
+    "latin": "Ushalli fardha dhuhri arba'a rak'aatin mustaqbilal qiblati adaa'an lillahi ta'ala",
+    "arti": "Aku niat sholat fardhu dzuhur empat rakaat, menghadap kiblat, karena Allah Ta'ala"
+  },
+  {
+    "id": "niatashar",
+    "arab": "اُصَلِّيْ فَرْضَ الْعَصْرِ اَرْبَعَ رَكَعَاتٍ مُسْتَقْبِلَ الْقِبْلَةِ عَدَاءً لِلّهِ تَعَالَى",
+    "nama": "Sholat Ashar",
+    "latin": "Ushalli fardha 'asri arba'a rak'aatin mustaqbilal qiblati adaa'an lillahi ta'ala",
+    "arti": "Aku niat sholat fardhu ashar empat rakaat, menghadap kiblat, karena Allah Ta'ala"
+  },
+  {
+    "id": "niatmaghrib",
+    "arab": "اُصَلِّيْ فَرْضَ الْمَغْرِبِ ثَلَاثَ رَكَعَاتٍ مُسْتَقْبِلَ الْقِبْلَةِ عَدَاءً لِلّهِ تَعَالَى",
+    "nama": "Sholat Maghrib",
+    "latin": "Ushalli fardha maghribi thalatha rak'aatin mustaqbilal qiblati adaa'an lillahi ta'ala",
+    "arti": "Aku niat sholat fardhu maghrib tiga rakaat, menghadap kiblat, karena Allah Ta'ala"
+  },
+  {
+    "id": "niatisya",
+    "arab": "اُصَلِّيْ فَرْضَ الْعِشَاءِ اَرْبَعَ رَكَعَاتٍ مُسْتَقْبِلَ الْقِبْلَةِ عَدَاءً لِلّهِ تَعَالَى",
+    "nama": "Sholat Isya",
+    "latin": "Ushalli fardha 'isya'i arba'a rak'aatin mustaqbilal qiblati adaa'an lillahi ta'ala",
+    "arti": "Aku niat sholat fardhu isya empat rakaat, menghadap kiblat, karena Allah Ta'ala"
+  }
+]

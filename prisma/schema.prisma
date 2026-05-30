@@ -29,26 +29,134 @@ model Surah {
 }
 
 model Ayat {
-  id            Int    @id @default(autoincrement())
+  id            Int     @id @default(autoincrement())
   surahId       Int
   nomorAyat     Int
-  teksArab      String @db.Text
-  teksLatin     String @db.Text
-  teksIndonesia String @db.Text
+  teksArab      String  @db.Text
+  teksLatin     String  @db.Text
+  teksIndonesia String  @db.Text
   audioUrls     Json // { "01": url, ..., "06": url }
   juz           Int? // 1-30
   halaman       Int? // nomor halaman mushaf (1-604)
+  /// Jenis sajdah jika ayat ini termasuk ayat sajdah ("wajibah" / "mukhtalaf").
+  /// Null = bukan ayat sajdah. Ada 14-15 ayat sajdah di seluruh Al-Qur'an.
+  sajdah        String?
 
-  surah      Surah        @relation(fields: [surahId], references: [id], onDelete: Cascade)
-  tafsirAyat TafsirAyat[]
-  bookmarks  Bookmark[]
-  hafalan    Hafalan[]
+  surah        Surah          @relation(fields: [surahId], references: [id], onDelete: Cascade)
+  tafsirAyat   TafsirAyat[]
+  bookmarks    Bookmark[]
+  hafalan      Hafalan[]
+  translations Translation[]
+  asbabunNuzul AsbabunNuzul[]
+  topicLinks   TopicAyat[]
+  kata         AyatKata[]
+  notes        AyatNote[]
+  embeddings   AyatEmbedding?
 
   @@unique([surahId, nomorAyat])
   @@index([surahId])
   @@index([halaman])
   @@index([juz])
+  @@index([sajdah])
   @@map("ayat")
+}
+
+// ─── MULTI-TRANSLATION ────────────────────────────────
+// One row per (ayat × translation source). Lets us serve multiple
+// translations of the same ayat side-by-side without changing the Ayat
+// schema.
+
+model Translation {
+  id         Int      @id @default(autoincrement())
+  ayatId     Int
+  /// ISO 639-1: "id", "en", "ms", "ar" (Arabic-only)
+  bahasa     String
+  /// Source slug, e.g. "sahih-international", "muhammad-asad",
+  /// "quraish-shihab", "kemenag-2019".
+  sumber     String
+  /// Optional translator/author display name.
+  penerjemah String?
+  teks       String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([ayatId, sumber])
+  @@index([sumber])
+  @@index([bahasa])
+  @@map("translations")
+}
+
+// ─── TOPIK / TEMATIK ──────────────────────────────────
+// Kelompokan ayat per topik (sabar, syukur, doa, dll) sehingga app bisa
+// "browse by theme" — bukan cuma per surah/juz.
+
+model Topic {
+  id               Int       @id @default(autoincrement())
+  /// URL-friendly identifier, e.g. "sabar", "syukur", "doa-mustajab".
+  slug             String    @unique
+  nama             String
+  deskripsi        String?   @db.Text
+  /// Display order on /topic list page (lower = first).
+  urutan           Int       @default(100)
+  /// AI-generated 2-3 sentence overview shown atas topic detail page.
+  aiSummary        String?   @db.Text
+  aiSummaryModel   String?
+  aiSummaryAt      DateTime?
+  /// AI-generated 7-day reading plan. Shape:
+  /// [{ day, tema, ayatIds: [internal ayatId] }]. Null until generated.
+  readingPlan      Json?
+  readingPlanModel String?
+  readingPlanAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  ayatLinks TopicAyat[]
+
+  @@index([urutan])
+  @@map("topics")
+}
+
+model TopicAyat {
+  id      Int     @id @default(autoincrement())
+  topicId Int
+  ayatId  Int
+  /// Optional excerpt or note explaining why this ayat fits the topic.
+  catatan String? @db.Text
+  /// Provenance: "curated" (manual, original kurasi ulama) or "ai" (auto-
+  /// discovered via embedding similarity). Curated ayat selalu ditampilkan
+  /// di section "Ayat utama"; AI-discovered di "Lebih banyak ayat relevan".
+  source  String  @default("curated")
+  /// Relevance score 0..1 when source="ai", null when curated.
+  aiScore Float?
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  ayat  Ayat  @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, ayatId])
+  @@index([topicId])
+  @@index([ayatId])
+  @@index([source])
+  @@map("topic_ayat")
+}
+
+// ─── ASBABUN NUZUL ────────────────────────────────────
+// Sebab turunnya ayat — historical context per ayat.
+
+model AsbabunNuzul {
+  id        Int      @id @default(autoincrement())
+  ayatId    Int
+  teks      String   @db.Text
+  sumber    String? // e.g. "Asbabun Nuzul Al-Wahidi", "Lubabun Nuqul"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([ayatId, sumber])
+  @@index([ayatId])
+  @@map("asbabun_nuzul")
 }
 
 model Tafsir {
@@ -88,8 +196,15 @@ model Doa {
   sumber    String?
   grup      String?
   tag       String?
+  /// Optional display order within a `grup` (e.g. wirid pagi/petang). Lower
+  /// shows first. Same ordering across all doa (default 100) so it can be
+  /// used as a tiebreaker on filter queries too.
+  urutan    Int      @default(100)
+  /// Optional repeat counter for wirid items, mis. 3, 7, 33, 100.
+  hitungan  Int?
   createdAt DateTime @default(now())
 
+  @@index([grup, urutan])
   @@map("doa")
 }
 
@@ -139,6 +254,10 @@ model User {
   readingProgress ReadingProgress[]
   hafalan         Hafalan[]
   refreshTokens   RefreshToken[]
+  deviceTokens    DeviceToken[]
+  notes           AyatNote[]
+  readingSessions ReadingSession[]
+  readingGoal     ReadingGoal?
 
   @@map("users")
 }
@@ -200,6 +319,128 @@ model Hafalan {
   @@map("hafalan")
 }
 
+// ─── API KEYS (app/client identification, separate from user JWT) ──────
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  /// Human-readable label, e.g. "Android v1.0", "Public read-only".
+  name       String
+  /// bcrypt hash of the key. The raw key is shown to admin ONCE on create.
+  keyHash    String    @unique
+  /// First 8 chars of the raw key, for display in admin UI (non-secret).
+  keyPrefix  String
+  /// Comma-separated scopes; "read" for public endpoints, "write" for user
+  /// endpoints (still requires JWT on top). Wildcard "*" means all.
+  scopes     String    @default("read")
+  /// Per-key rate-limit override (requests per minute). 0 = use global default.
+  rateLimit  Int       @default(0)
+  enabled    Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+// ─── DEVICE TOKENS (FCM/APNS push notification targets) ────────────────
+
+model DeviceToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  /// "android" | "ios" | "web"
+  platform   String
+  /// Optional human-readable label set by client app.
+  deviceName String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+// ─── BROADCAST HISTORY ────────────────────────────────
+// Setiap kali admin mengirim push notification massal, satu row ditulis di
+// sini sehingga ada audit trail + dukungan untuk scheduled broadcast yang
+// dikirim oleh BullMQ delayed job.
+
+model Broadcast {
+  id             String    @id @default(uuid())
+  title          String
+  body           String    @db.Text
+  /// Optional deeplink path yang dibuka saat user tap notifikasi.
+  deeplink       String?
+  /// Status: "scheduled" | "sent" | "failed" | "cancelled"
+  status         String    @default("sent")
+  attemptedCount Int       @default(0)
+  successCount   Int       @default(0)
+  failedCount    Int       @default(0)
+  invalidRemoved Int       @default(0)
+  /// Future timestamp if scheduled, null kalau langsung kirim.
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  errorMsg       String?   @db.Text
+  /// UUID admin user yang trigger; null kalau dari cron.
+  sentByUserId   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("broadcasts")
+}
+
+// ─── SEARCH ANALYTICS ─────────────────────────────────
+// Log tiap pencarian `/quran/search` untuk mengetahui:
+// 1. term apa yang paling sering dicari (popular queries)
+// 2. term yang nggak return hasil (gap konten)
+
+model SearchLog {
+  id          Int      @id @default(autoincrement())
+  /// Normalized lowercase query.
+  query       String
+  /// "id" | "latin" | "arab"
+  lang        String
+  resultCount Int
+  userId      String?
+  /// IP atau prefix-only (untuk privacy) — dipakai rate-limit per-IP.
+  clientHint  String?
+  createdAt   DateTime @default(now())
+
+  @@index([query])
+  @@index([createdAt])
+  @@index([resultCount])
+  @@map("search_logs")
+}
+
+// ─── AUDIT LOG ────────────────────────────────────────
+// Track admin actions untuk forensik & accountability ketika ada >1 admin.
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  /// UUID admin yang melakukan. Null jika system/cron.
+  actorId    String?
+  actorEmail String?
+  /// Verb action, e.g. "user.promote", "user.delete", "broadcast.send",
+  /// "snapshot.export", "seed.start".
+  action     String
+  /// Optional human-readable target (mis. "user:abc@x.com", "snapshot:foo.sql.gz").
+  target     String?
+  /// JSON blob untuk konteks tambahan (data lama/baru, payload, dll).
+  metadata   Json?
+  clientHint String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
 // ─── SEED TRACKING ────────────────────────────────────
 
 model SeedLog {
@@ -215,4 +456,619 @@ model SeedLog {
   updatedAt  DateTime  @updatedAt
 
   @@map("seed_logs")
+}
+
+// ─── HADIS ────────────────────────────────────────────
+
+model Perawi {
+  /// URL slug, mis. "bukhari", "muslim", "abu-dawud" — also the public route param.
+  slug      String   @id
+  nama      String
+  /// Jumlah hadis di koleksi ini (snapshot from source JSON).
+  total     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  hadis     Hadis[]
+
+  @@map("perawi")
+}
+
+model Hadis {
+  id         Int      @id @default(autoincrement())
+  perawiSlug String
+  perawi     Perawi   @relation(fields: [perawiSlug], references: [slug], onDelete: Cascade)
+  nomor      Int
+  arab       String
+  /// Terjemahan bahasa Indonesia.
+  terjemahan String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([perawiSlug, nomor])
+  @@index([perawiSlug])
+  @@map("hadis")
+}
+
+// ─── ASMAUL HUSNA ─────────────────────────────────────
+
+model AsmaulHusna {
+  id         Int      @id
+  arab       String
+  latin      String
+  /// Arti (terjemahan Indonesia).
+  arti       String
+  /// 1-2 paragraf penjelasan makna nama.
+  penjelasan String?  @db.Text
+  /// Optional dalil dari Al-Qur'an, mis. "Q.S. Al-Hashr ayat 22-24".
+  dalil      String?
+  /// Optional referensi terkait, contoh kandungan singkat tafsir.
+  faidah     String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("asmaul_husna")
+}
+
+// ─── SHOP (physical products, WhatsApp ordering) ──────
+
+model ShopCategory {
+  id        Int           @id @default(autoincrement())
+  /// URL slug, mis. "mukena", "sajadah". Unique.
+  slug      String        @unique
+  nama      String
+  /// Optional short blurb shown above the category grid.
+  deskripsi String?
+  /// Manual ordering — lower shows first.
+  sortOrder Int           @default(0)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  products  ShopProduct[]
+
+  @@index([isActive, sortOrder])
+  @@map("shop_categories")
+}
+
+model ShopProduct {
+  id         Int                @id @default(autoincrement())
+  /// URL slug, unique across products.
+  slug       String             @unique
+  nama       String
+  /// Markdown-ish plain text description shown on detail page.
+  deskripsi  String
+  /// IDR price stored as integer (e.g. 125000 = Rp 125.000).
+  hargaIdr   Int
+  /// Optional "coret" price for showing a discount.
+  hargaCoret Int?
+  /// Stock display — null means "stok tersedia" (no number). 0 means habis.
+  stok       Int?
+  /// Per-product WA number override (optional). Falls back to ShopSetting.
+  waNumber   String?
+  isActive   Boolean            @default(true)
+  isFeatured Boolean            @default(false)
+  sortOrder  Int                @default(0)
+  categoryId Int
+  category   ShopCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images     ShopProductImage[]
+  orders     ShopOrder[]
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([categoryId])
+  @@index([isActive, isFeatured, sortOrder])
+  @@map("shop_products")
+}
+
+model ShopProductImage {
+  id        Int         @id @default(autoincrement())
+  productId Int
+  product   ShopProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Public-facing URL path, mis. "/uploads/shop/abc.jpg".
+  url       String
+  /// Optional alt text for accessibility.
+  alt       String?
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  @@index([productId])
+  @@map("shop_product_images")
+}
+
+/// KV settings for the shop module. Currently used keys:
+///   wa_number            → "62812xxxxxxx" (digits only, no +)
+///   wa_greeting          → template string "{salam} kak, saya tertarik dengan {produk}…"
+///   shop_title           → "Toko Rumah Qur'an"
+///   shop_description     → tagline shown on /toko hero
+///   order_mode           → "wa" | "form" — how customers place an order
+///   form_success_message → thank-you text shown after a form order is submitted
+///   form_submit_label    → label for the order form submit button
+model ShopSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("shop_settings")
+}
+
+/// A promotional banner shown at the top of the shop (toko). Consumed by the
+/// web frontend and the mobile apps via GET /shop/banners. The image is
+/// uploaded separately (POST .../image); linkUrl optionally deep-links to a
+/// product page or an external promo.
+model ShopBanner {
+  id        Int      @id @default(autoincrement())
+  /// Optional headline rendered over the banner image.
+  title     String?
+  /// Optional secondary line under the title.
+  subtitle  String?
+  /// Image path (mis. "/uploads/shop/abc.jpg") or absolute URL. Needed to display.
+  imageUrl  String?
+  /// Optional tap target: internal path ("/toko/slug") or full URL.
+  linkUrl   String?
+  /// Manual ordering — lower shows first.
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("shop_banners")
+}
+
+/// A single field in the dynamic order form (form builder). Admin defines
+/// which fields a customer fills in when `order_mode = "form"`. Values are
+/// stored per-order in ShopOrder.fields keyed by `key`.
+model ShopOrderField {
+  id          Int      @id @default(autoincrement())
+  /// Machine key used as the JSON key in ShopOrder.fields, mis. "nama", "alamat", "no_hp". Unique, lowercase+underscore.
+  key         String   @unique
+  /// Human label shown above the input.
+  label       String
+  /// Input type: text | textarea | tel | email | number | select.
+  type        String   @default("text")
+  /// Optional placeholder text.
+  placeholder String?
+  /// Optional helper text shown under the input.
+  helpText    String?
+  /// Whether the customer must fill this in.
+  required    Boolean  @default(true)
+  /// For type=select — the list of choices. Bentuk: ["Merah", "Biru"].
+  options     Json?
+  /// Manual ordering — lower shows first.
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("shop_order_fields")
+}
+
+/// A customer order submitted through the on-site form (order_mode="form").
+/// Product details are snapshotted at submission time so reports stay accurate
+/// even if the product is later edited or deleted.
+model ShopOrder {
+  id            Int          @id @default(autoincrement())
+  /// Human-readable unique reference, mis. "ORD-260529-4821".
+  orderNumber   String       @unique
+  /// FK to the product — nullable so deleting a product keeps order history.
+  productId     Int?
+  product       ShopProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Snapshot of product name/slug/price at order time.
+  productName   String
+  productSlug   String?
+  hargaIdr      Int
+  quantity      Int          @default(1)
+  totalIdr      Int
+  /// Dynamic field values keyed by ShopOrderField.key. Bentuk: { "nama": "...", "alamat": "..." }.
+  fields        Json
+  /// Denormalized from `fields` for quick search / list columns (best-effort).
+  customerName  String?
+  customerPhone String?
+  /// Workflow status: baru | diproses | dikirim | selesai | batal.
+  status        String       @default("baru")
+  /// Internal admin note (not shown to the customer).
+  adminNote     String?      @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("shop_orders")
+}
+
+// ─── KISAH 25 NABI ────────────────────────────────────
+
+model Nabi {
+  id          Int      @id @default(autoincrement())
+  /// Posisi dalam urutan 25 nabi yang wajib diketahui (1=Adam, 25=Muhammad).
+  urutan      Int      @unique
+  /// URL slug, mis. "adam", "musa", "muhammad".
+  slug        String   @unique
+  nama        String
+  namaArab    String
+  /// Gelar / sifat khas, mis. "Abul Basyar", "Kalimullah".
+  gelar       String?
+  /// Periode hidup ringkas.
+  periode     String?
+  /// 1-2 paragraf ringkasan kehidupan & dakwah (untuk listing).
+  ringkasan   String   @db.Text
+  /// Narasi lengkap kisah (markdown-ish plain text).
+  kisah       String   @db.Text
+  /// Referensi ayat-ayat terkait. Bentuk: [{ surah: 2, ayat: 30, catatan: "..." }, ...].
+  ayatRujukan Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([urutan])
+  @@map("nabi")
+}
+
+// ─── SIRAH NABAWI ─────────────────────────────────────
+
+model Sirah {
+  id        Int      @id @default(autoincrement())
+  slug      String   @unique
+  judul     String
+  /// Urutan kronologis bab sirah (lebih kecil = lebih dulu).
+  urutan    Int
+  /// Periode singkat, mis. "Sebelum kenabian", "Makkah awal", "Madinah".
+  periode   String?
+  /// Isi bab dalam markdown / paragraf.
+  isi       String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([urutan])
+  @@map("sirah")
+}
+
+// ─── KHUTBAH JUMAT ────────────────────────────────────
+
+model Khutbah {
+  id        Int       @id @default(autoincrement())
+  slug      String    @unique
+  judul     String
+  /// Tema/kategori, mis. "akhlak", "iman", "fiqih".
+  tema      String?
+  /// Tanggal khutbah disampaikan (jika ada).
+  tanggal   DateTime?
+  /// Isi khutbah lengkap dalam markdown.
+  isi       String    @db.Text
+  /// Mukadimah / pembuka.
+  pembuka   String?   @db.Text
+  /// Penutup / doa.
+  penutup   String?   @db.Text
+  /// Nama khatib atau sumber.
+  sumber    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tema])
+  @@index([tanggal])
+  @@map("khutbah")
+}
+
+// ─── HADIS QUDSI ──────────────────────────────────────
+// Koleksi hadis qudsi — wahyu Allah yang disampaikan melalui lisan
+// Rasulullah ﷺ. Disimpan terpisah dari Hadis biasa karena karakter dan
+// sumber-nya berbeda (40 Hadis Qudsi An-Nawawi sebagai basis).
+
+model HadisQudsi {
+  id         Int      @id @default(autoincrement())
+  nomor      Int      @unique
+  judul      String?
+  arab       String   @db.Text
+  terjemahan String   @db.Text
+  /// Perawi hadis qudsi (mis. "Bukhari", "Muslim", "Ahmad").
+  sumber     String?
+  /// Kitab koleksi (mis. "Arba'in Qudsiyah Imam An-Nawawi").
+  kitab      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("hadis_qudsi")
+}
+
+// ─── KATA PER KATA (WORD-BY-WORD QURAN) ───────────────
+// Setiap kata Arab di sebuah ayat punya transliterasi & arti masing-masing.
+// Disimpan lazy: tidak semua ayat punya entri kata. Frontend hanya menampilkan
+// mode word-by-word kalau data tersedia.
+
+model AyatKata {
+  id            Int     @id @default(autoincrement())
+  ayatId        Int
+  /// Posisi kata dalam ayat (1-based). Unik per ayat.
+  posisi        Int
+  arab          String
+  /// Transliterasi Latin per kata (opsional).
+  transliterasi String?
+  /// Arti per kata (bahasa Indonesia).
+  arti          String
+
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@unique([ayatId, posisi])
+  @@index([ayatId])
+  @@map("ayat_kata")
+}
+
+// ─── CATATAN AYAT PERSONAL ────────────────────────────
+// Personal journaling per user per ayat. Berbeda dengan Bookmark.catatan
+// yang terbatas dan utamanya untuk konteks bookmark — note di sini bisa
+// banyak (1 user × 1 ayat → multi-catatan dengan judul opsional).
+
+model AyatNote {
+  id        String   @id @default(uuid())
+  userId    String
+  ayatId    Int
+  /// Judul opsional supaya catatan panjang tetap rapi di list.
+  judul     String?
+  body      String   @db.Text
+  /// Privacy flag — selalu private di v1, disediakan untuk fitur sharing nanti.
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([ayatId])
+  @@map("ayat_notes")
+}
+
+// ─── READING STREAK ───────────────────────────────────
+// One row per (userId, tanggal). Setiap kali user baca minimal 1 ayat, baris
+// hari itu di-upsert dan ayatCount di-increment. Streak dihitung di app
+// (consecutive days backwards from "today").
+
+model ReadingSession {
+  id        String   @id @default(uuid())
+  userId    String
+  /// Tanggal lokal user dalam format yyyy-MM-dd (tanpa jam). String supaya
+  /// timezone-aware: app meng-emit tanggal lokal user, bukan UTC.
+  tanggal   String
+  /// Jumlah ayat yang dibaca pada hari itu.
+  ayatCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tanggal])
+  @@index([userId, tanggal])
+  @@map("reading_sessions")
+}
+
+// ─── READING GOAL ─────────────────────────────────────
+// Target harian per user (mis. 10 ayat / hari, 1 halaman / hari, 1 juz / hari).
+
+model ReadingGoal {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  /// "ayat" | "halaman" | "juz" — unit target.
+  unit      String   @default("ayat")
+  /// Jumlah unit target per hari.
+  target    Int      @default(10)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reading_goals")
+}
+
+// ─── PAGE VIEW ANALYTICS ──────────────────────────────
+// First-party page-view tracking. One row per visit. No IP stored, no
+// cookies. A client-side tracker fires POST /analytics/pageview on every
+// Next.js route change.
+
+// ─── APP SETTINGS (dynamic admin-editable config) ─────
+// KV table for runtime-configurable settings — AI provider/keys,
+// future integrations, feature flags. Values for keys flagged secret
+// are stored AES-256-GCM encrypted (handled in service layer).
+
+model AppSetting {
+  key       String   @id
+  value     String   @db.Text
+  /// Marks the value as encrypted at rest. Service must decrypt on read.
+  isSecret  Boolean  @default(false)
+  /// Free-text label shown to admin in the UI.
+  label     String?
+  /// Optional category for grouping in the admin UI ("ai", "smtp", etc.).
+  category  String?
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("app_settings")
+}
+
+// ─── AYAT EMBEDDINGS (for semantic search) ────────────
+// Stored in a SEPARATE table from `ayat` because:
+// 1. Prisma can't represent `vector` natively — keeping it apart means the
+//    Ayat model + queries stay zero-change.
+// 2. Lets us swap embedding models cheaply: a model upgrade just deletes
+//    these rows and re-seeds; ayat data is untouched.
+// The actual `embedding vector(1536)` column is added by raw SQL migration
+// (see add_ai_search) since Prisma's Postgres provider can't generate it.
+
+model AyatEmbedding {
+  ayatId     Int      @id
+  /// Hash of the source text + model name used to generate the embedding.
+  /// Lets the seed job detect "is this row stale?" without re-embedding.
+  sourceHash String
+  /// Embedding model identifier, mis. "text-embedding-3-small".
+  model      String
+  /// Dimension count of the stored embedding (e.g. 1536). Lets the search
+  /// service validate query embedding before nearest-neighbor lookup.
+  dim        Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ayat Ayat @relation(fields: [ayatId], references: [id], onDelete: Cascade)
+
+  @@index([model])
+  @@map("ayat_embeddings")
+}
+
+// ─── AI QUERY LOG ─────────────────────────────────────
+// One row per /quran/ask request. Powers cost dashboard, top-queries
+// analytics, gap-content report (no good match), and conversation history.
+
+// ─── NIAT SHALAT (5 wajib + opsional tambahan) ───────
+
+model NiatShalat {
+  id        Int      @id @default(autoincrement())
+  /// Slug stabil ("niatsubuh", "niatdzuhur", dll) untuk URL & lookup cepat.
+  slug      String   @unique
+  nama      String
+  arab      String   @db.Text
+  latin     String   @db.Text
+  arti      String   @db.Text
+  /// Display order (1=subuh, 2=dzuhur, dll).
+  urutan    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([urutan])
+  @@map("niat_shalat")
+}
+
+// ─── BACAAN SHALAT per-gerakan ───────────────────────
+// Tiap gerakan punya 1+ bacaan alternatif (terutama Iftitah & Sujud).
+
+model BacaanShalat {
+  id        Int      @id @default(autoincrement())
+  /// Urutan gerakan dalam shalat (1=Takbiratul Ihram, … 9=Salam).
+  gerakan   Int
+  /// Nama gerakan, mis. "Iftitah", "Tasyahud Akhir".
+  nama      String
+  /// Urutan bacaan ke-N dalam gerakan ini.
+  varian    Int      @default(1)
+  arab      String   @db.Text
+  latin     String   @db.Text
+  arti      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([gerakan, varian])
+  @@index([gerakan])
+  @@map("bacaan_shalat")
+}
+
+// ─── TAHLIL (urutan lengkap bacaan tahlil) ───────────
+
+model Tahlil {
+  id        Int      @id @default(autoincrement())
+  /// Posisi dalam urutan tahlil (1=Pengantar Al-Fatihah, dst).
+  urutan    Int      @unique
+  judul     String
+  arab      String   @db.Text
+  latin     String?  @db.Text
+  arti      String   @db.Text
+  /// Optional jumlah pengulangan kalau perlu (mis. Surat Al-Ikhlas 3 kali).
+  hitungan  Int?
+  /// Optional grup logis ("pembuka", "surat", "tasbih", "doa-penutup").
+  jenis     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([urutan])
+  @@index([jenis])
+  @@map("tahlil")
+}
+
+model AiQuery {
+  id             BigInt   @id @default(autoincrement())
+  query          String
+  userId         String?
+  conversationId String?
+  resultCount    Int
+  topScore       Float?
+  embedTokens    Int      @default(0)
+  llmTokensIn    Int      @default(0)
+  llmTokensOut   Int      @default(0)
+  embedModel     String?
+  llmModel       String?
+  cached         Boolean  @default(false)
+  withSummary    Boolean  @default(false)
+  latencyMs      Int      @default(0)
+  clientHint     String?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([query])
+  @@index([topScore])
+  @@index([conversationId])
+  @@map("ai_queries")
+}
+
+model PageView {
+  id         BigInt   @id @default(autoincrement())
+  /// Path only (no query string). Mis. "/surat/2".
+  path       String
+  /// Optional user when authenticated.
+  userId     String?
+  /// Persistent per-browser random session id (16 chars) stored in
+  /// localStorage. Used to count unique visitors.
+  sessionId  String
+  /// Document referrer; clipped to 255 chars; empty on internal nav.
+  referer    String?
+  /// "mobile" | "tablet" | "desktop" | "bot" — derived from UA.
+  device     String
+  /// Browser family (chrome / safari / firefox / edge / opera / other).
+  browser    String?
+  /// OS family (android / ios / windows / macos / linux / other).
+  os         String?
+  /// Best-guess country from Accept-Language top tag (fallback "id").
+  country    String?
+  /// Truncated client hint for fraud heuristics (e.g. UA-hash prefix).
+  /// Never enough to re-identify a user.
+  clientHint String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([path])
+  @@index([sessionId])
+  @@index([userId])
+  @@map("page_views")
+}
+
+/// Per-route SEO overrides managed from the admin SEO panel. A row whose
+/// `path` matches the requested route (exact match) wins over the
+/// auto-generated, content-derived defaults. Anything left null falls back
+/// to the route template / global SEO settings (stored in app_settings,
+/// category "seo").
+model SeoPage {
+  id          Int      @id @default(autoincrement())
+  /// Canonical pathname this override applies to, e.g. "/surat/2" or "/doa".
+  /// Always starts with "/" and has no query string or trailing slash.
+  path        String   @unique
+  /// Optional human label shown in the admin list (e.g. "Beranda").
+  label       String?
+  title       String?
+  description String?  @db.Text
+  keywords    String?
+  /// Open Graph image — absolute URL or path relative to the site origin.
+  ogImage     String?
+  /// Open Graph type, e.g. "website" | "article".
+  ogType      String?
+  /// Explicit canonical URL override (absolute). Usually left null.
+  canonical   String?
+  /// When true the page emits robots noindex,nofollow and is dropped from
+  /// the sitemap.
+  noindex     Boolean  @default(false)
+  /// Sitemap change-frequency hint.
+  changefreq  String?
+  /// Sitemap priority hint (0.0 .. 1.0).
+  priority    Float?
+  /// Raw JSON-LD structured-data blob injected verbatim into <head>.
+  jsonLd      String?  @db.Text
+  /// When false this override is ignored (soft disable without deleting).
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("seo_pages")
 }

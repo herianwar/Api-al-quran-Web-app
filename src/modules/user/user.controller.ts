@@ -6,11 +6,14 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PaginationQueryDto } from '../../common/dto/pagination';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RegisterDeviceDto } from './dto/device.dto';
 import {
   CreateBookmarkDto,
   CreateHafalanDto,
@@ -58,9 +61,12 @@ export class UserController {
   }
 
   @Get('bookmark')
-  @ApiOperation({ summary: 'List bookmark' })
-  getBookmarks(@CurrentUser('userId') userId: string) {
-    return this.userService.getBookmarks(userId);
+  @ApiOperation({ summary: 'List bookmark (paginated)' })
+  getBookmarks(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.userService.getBookmarks(userId, pagination);
   }
 
   @Post('bookmark')
@@ -82,9 +88,12 @@ export class UserController {
   }
 
   @Get('hafalan')
-  @ApiOperation({ summary: 'List ayat hafalan' })
-  getHafalan(@CurrentUser('userId') userId: string) {
-    return this.userService.getHafalan(userId);
+  @ApiOperation({ summary: 'List ayat hafalan (paginated)' })
+  getHafalan(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.userService.getHafalan(userId, pagination);
   }
 
   @Post('hafalan')
@@ -110,5 +119,34 @@ export class UserController {
     @Body() dto: ReviewHafalanDto,
   ) {
     return this.userService.reviewHafalan(userId, id, dto.remembered);
+  }
+
+  // ─── Push notification devices ──────────────────────────────────────
+
+  @Post('devices')
+  @ApiOperation({
+    summary:
+      'Register FCM/APNS token agar device ini menerima push notification',
+  })
+  registerDevice(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: RegisterDeviceDto,
+  ) {
+    return this.userService.registerDevice(userId, dto);
+  }
+
+  @Get('devices')
+  @ApiOperation({ summary: 'List device terdaftar (token tidak ditampilkan)' })
+  listDevices(@CurrentUser('userId') userId: string) {
+    return this.userService.listDevices(userId);
+  }
+
+  @Delete('devices/:token')
+  @ApiOperation({ summary: 'Unregister device (panggil saat logout/uninstall)' })
+  unregisterDevice(
+    @CurrentUser('userId') userId: string,
+    @Param('token') token: string,
+  ) {
+    return this.userService.unregisterDevice(userId, token);
   }
 }

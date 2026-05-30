@@ -16,6 +16,7 @@ export default function RegisterPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setError("");
     setBusy(true);
     try {
@@ -30,37 +31,47 @@ export default function RegisterPage() {
 
   return (
     <div className="mx-auto max-w-sm px-4 py-12">
-      <h1 className="text-2xl font-bold mb-6 text-center">Daftar Akun</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-slate-900 mb-2 text-center">
+        Daftar Akun
+      </h1>
+      <p className="text-sm text-slate-500 text-center mb-6">
+        Mulai simpan bookmark dan hafalan Anda.
+      </p>
+
       <form
         onSubmit={onSubmit}
-        className="space-y-4 rounded-2xl border border-emerald-900/10 bg-white/60 p-6"
+        className="card p-6 space-y-4"
       >
         {error && (
-          <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-sm text-red-800">
             {error}
           </p>
         )}
         <div>
-          <label className="block text-sm font-medium mb-1">Nama</label>
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+            Nama
+          </label>
           <input
             value={nama}
             onChange={(e) => setNama(e.target.value)}
-            className="w-full rounded-lg border border-emerald-900/15 bg-white/70 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Email</label>
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+            Email
+          </label>
           <input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-emerald-900/15 bg-white/70 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Password (min. 8 karakter)
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+            Password
           </label>
           <input
             type="password"
@@ -68,20 +79,24 @@ export default function RegisterPage() {
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-emerald-900/15 bg-white/70 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
           />
+          <p className="text-xs text-slate-500 mt-1">Minimal 8 karakter.</p>
         </div>
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-emerald-600 text-white py-2.5 font-semibold hover:bg-emerald-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-emerald-600 text-white py-3 font-semibold hover:bg-emerald-700 disabled:opacity-50 shadow-sm transition"
         >
           {busy ? "Memproses…" : "Daftar"}
         </button>
       </form>
-      <p className="text-center text-sm text-emerald-900/60 mt-4">
+      <p className="text-center text-sm text-slate-600 mt-5">
         Sudah punya akun?{" "}
-        <Link href="/login" className="text-emerald-700 font-medium hover:underline">
+        <Link
+          href="/login"
+          className="text-emerald-700 font-semibold hover:underline"
+        >
           Masuk
         </Link>
       </p>

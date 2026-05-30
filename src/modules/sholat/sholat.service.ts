@@ -57,21 +57,34 @@ export class SholatService {
     });
   }
 
-  async getKotaByProvinsi(provinsi: string): Promise<ResponsePayload<unknown>> {
+  async getKotaByProvinsi(
+    provinsi?: string,
+  ): Promise<ResponsePayload<unknown>> {
     await this.ensureKotaSeeded();
+    // When provinsi is omitted, return the full list — myquran's kota feed
+    // doesn't carry provinsi metadata (everything lands in "Lainnya"), so the
+    // frontend prefers a single searchable list of all 518 entries.
+    const cacheKey = provinsi
+      ? CacheKey.kotaList(provinsi)
+      : CacheKey.kotaList('__all__');
     const { data, cached } = await this.redis.remember(
-      CacheKey.kotaList(provinsi),
+      cacheKey,
       CacheTtl.JADWAL_SHOLAT,
       () =>
         this.prisma.kota.findMany({
-          where: { provinsi: { equals: provinsi, mode: 'insensitive' } },
+          where: provinsi
+            ? { provinsi: { equals: provinsi, mode: 'insensitive' } }
+            : undefined,
           orderBy: { nama: 'asc' },
         }),
     );
-    return ok(data, `Daftar kota provinsi ${provinsi}`, {
-      total: data.length,
-      cached,
-    });
+    return ok(
+      data,
+      provinsi
+        ? `Daftar kota provinsi ${provinsi}`
+        : 'Daftar seluruh kota',
+      { total: data.length, cached },
+    );
   }
 
   // ─── Jadwal ─────────────────────────────────────────────────────────
@@ -120,7 +133,7 @@ export class SholatService {
   }
 
   /** Return month's jadwal from DB; fetch+store from equran.id on cache miss. */
-  private async fetchAndStoreMonth(
+  async fetchAndStoreMonth(
     kotaId: string,
     bulan: number,
     tahun: number,
@@ -132,7 +145,18 @@ export class SholatService {
       where: { kotaId, tanggal: { gte: monthStart, lt: monthEnd } },
       orderBy: { tanggal: 'asc' },
     });
-    if (existing.length > 0) return existing;
+    // Force one external fetch when the kota row still has the seed
+    // placeholder "Lainnya" — we need myquran's `daerah` to back-fill the
+    // real provinsi. After that we skip on cache hit as usual.
+    const kotaCheck = await this.prisma.kota.findUnique({
+      where: { id: kotaId },
+      select: { provinsi: true },
+    });
+    const needsProvinsiEnrich =
+      !kotaCheck?.provinsi ||
+      kotaCheck.provinsi === 'Lainnya' ||
+      kotaCheck.provinsi === '-';
+    if (existing.length > 0 && !needsProvinsiEnrich) return existing;
 
     let raw: unknown;
     try {
@@ -146,19 +170,55 @@ export class SholatService {
 
     const { items, namaKota, provinsi } = this.parseJadwal(raw);
     const kota = await this.prisma.kota.findUnique({ where: { id: kotaId } });
+    // Back-fill: when myquran responds with a real `daerah` and our kota row
+    // still has the placeholder "Lainnya", update the row so subsequent
+    // queries (provinsi list, kota-by-provinsi) work properly.
+    if (
+      kota &&
+      provinsi &&
+      provinsi !== '-' &&
+      (kota.provinsi === 'Lainnya' || kota.provinsi === '-' || !kota.provinsi)
+    ) {
+      try {
+        await this.prisma.kota.update({
+          where: { id: kotaId },
+          data: { provinsi, ...(namaKota ? { nama: namaKota } : {}) },
+        });
+        kota.provinsi = provinsi;
+        // Invalidate the cached provinsi/kota lists so the next read picks up
+        // the enriched value.
+        await this.redis.del(CacheKey.provinsiList());
+        await this.redis.delByPattern('sholat:kota:*');
+      } catch (err) {
+        this.logger.warn(
+          `Gagal enrich provinsi kota ${kotaId}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     const records = items
       .map((item) => this.mapJadwalItem(item, kotaId, namaKota, provinsi, kota))
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
+    let failed = 0;
     for (const rec of records) {
-      await this.prisma.jadwalSholat
-        .upsert({
+      try {
+        await this.prisma.jadwalSholat.upsert({
           where: { kotaId_tanggal: { kotaId, tanggal: rec.tanggal } },
           create: rec,
           update: rec,
-        })
-        .catch(() => undefined);
+        });
+      } catch (err) {
+        failed++;
+        this.logger.warn(
+          `Gagal upsert jadwal ${kotaId} ${rec.tanggal.toISOString().slice(0, 10)}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (failed > 0) {
+      this.logger.warn(
+        `Jadwal ${kotaId} ${bulan}/${tahun}: ${failed}/${records.length} entri gagal disimpan`,
+      );
     }
 
     return this.prisma.jadwalSholat.findMany({
@@ -194,10 +254,20 @@ export class SholatService {
   ) {
     const tanggal = this.parseDate(item.date ?? item.tanggal);
     if (!tanggal) return null;
+    // Prefer the live `daerah` from myquran's response (e.g. "DKI JAKARTA")
+    // over a stale kota.provinsi fallback like "Lainnya" — the kota table is
+    // seeded from /sholat/kota/semua which doesn't ship provinsi metadata.
+    const isStaleProvinsi =
+      !kota?.provinsi ||
+      kota.provinsi === 'Lainnya' ||
+      kota.provinsi === '-';
+    const resolvedProvinsi = isStaleProvinsi
+      ? (provinsi ?? kota?.provinsi ?? '-')
+      : kota.provinsi;
     return {
       kotaId,
       namaKota: kota?.nama ?? namaKota ?? kotaId,
-      provinsi: kota?.provinsi ?? provinsi ?? '-',
+      provinsi: resolvedProvinsi,
       tanggal,
       imsak: item.imsak ?? '-',
       subuh: item.subuh ?? '-',
@@ -234,18 +304,29 @@ export class SholatService {
       const root = (raw ?? {}) as Record<string, unknown>;
       const arr = (root.data ?? root) as unknown;
       const items = Array.isArray(arr) ? (arr as Record<string, unknown>[]) : [];
+      let failed = 0;
       for (const it of items) {
         const id = String(it.id ?? it.kode ?? '');
         if (!id) continue;
         const nama = String(it.lokasi ?? it.nama ?? id);
         const provinsi = String(it.daerah ?? it.provinsi ?? 'Lainnya');
-        await this.prisma.kota
-          .upsert({
+        try {
+          await this.prisma.kota.upsert({
             where: { id },
             create: { id, nama, provinsi },
             update: { nama, provinsi },
-          })
-          .catch(() => undefined);
+          });
+        } catch (err) {
+          failed++;
+          if (failed <= 3) {
+            this.logger.warn(
+              `Gagal upsert kota ${id}: ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+      if (failed > 0) {
+        this.logger.warn(`Seed kota: ${failed}/${items.length} entri gagal`);
       }
       this.logger.log(`Kota seeded: ${items.length} entri`);
     } catch (error) {

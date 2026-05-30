@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ResponsePayload, ok } from '../../common/dto/api-response';
+import {
+  PaginationQueryDto,
+  paginationArgs,
+  paginationMeta,
+} from '../../common/dto/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CacheKey, CacheTtl } from '../../redis/redis.constants';
 import { RedisService } from '../../redis/redis.service';
@@ -11,14 +16,21 @@ export class DoaService {
     private readonly redis: RedisService,
   ) {}
 
-  async getAll(): Promise<ResponsePayload<unknown>> {
-    const { data, cached } = await this.redis.remember(
+  async getAll(
+    pagination: PaginationQueryDto,
+  ): Promise<ResponsePayload<unknown>> {
+    // Cache the full list once (cheap — only 50 rows). Pagination is done
+    // in-memory because materializing 50 rows is cheaper than the Redis
+    // SET on a per-page basis.
+    const { data: all, cached } = await this.redis.remember(
       CacheKey.doaAll(),
       CacheTtl.DOA,
       () => this.prisma.doa.findMany({ orderBy: { id: 'asc' } }),
     );
-    return ok(data, 'Daftar doa berhasil diambil', {
-      total: data.length,
+    const { skip, take } = paginationArgs(pagination);
+    const page = all.slice(skip, skip + take);
+    return ok(page, 'Daftar doa berhasil diambil', {
+      ...paginationMeta(pagination, all.length),
       cached,
     });
   }
@@ -33,6 +45,13 @@ export class DoaService {
     }
     const skip = Math.floor(Math.random() * count);
     const [doa] = await this.prisma.doa.findMany({ skip, take: 1 });
+    if (!doa) {
+      // Rare: a concurrent delete shrank the table between count and read.
+      throw new NotFoundException({
+        message: 'Tidak ada doa yang tersedia',
+        error: 'NOT_FOUND',
+      });
+    }
     return ok(doa, 'Doa random berhasil diambil');
   }
 

@@ -1,0 +1,402 @@
+[
+  {
+    "id": 1,
+    "nama": "Doa Sebelum Makan",
+    "ar": "اَللَّهُمَّ بَارِكْ لَنَا فِيْمَا رَزَقْتَنَا وَقِنَا عَذَابَ النَّارِ",
+    "tr": "Allahumma bariklana fima razaqtana waqina 'adzaban-nar",
+    "idn": "Ya Allah, berkahilah kami dalam rezeki yang Engkau berikan kepada kami dan peliharalah kami dari siksa api neraka.",
+    "tentang": "HR. Ibnu as-Sunni"
+  },
+  {
+    "id": 2,
+    "nama": "Doa Sesudah Makan",
+    "ar": "اَلْحَمْدُ لِلَّهِ الَّذِيْ أَطْعَمَنَا وَسَقَانَا وَجَعَلَنَا مُسْلِمِيْنَ",
+    "tr": "Alhamdulillahil-ladzi ath'amana wasaqana waja'alana muslimin",
+    "idn": "Segala puji bagi Allah yang telah memberi kami makan dan minum, serta menjadikan kami sebagai orang-orang Muslim.",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 3,
+    "nama": "Doa Sebelum Tidur",
+    "ar": "بِاسْمِكَ اللَّهُمَّ أَمُوْتُ وَأَحْيَا",
+    "tr": "Bismika Allahumma amutu wa ahya",
+    "idn": "Dengan nama-Mu ya Allah, aku mati dan aku hidup.",
+    "tentang": "HR. Bukhari"
+  },
+  {
+    "id": 4,
+    "nama": "Doa Bangun Tidur",
+    "ar": "اَلْحَمْدُ لِلَّهِ الَّذِيْ أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُوْرُ",
+    "tr": "Alhamdulillahil-ladzi ahyana ba'da ma amatana wa ilaihin-nusyur",
+    "idn": "Segala puji bagi Allah yang telah menghidupkan kami setelah mematikan kami dan hanya kepada-Nya kami dikumpulkan.",
+    "tentang": "HR. Bukhari"
+  },
+  {
+    "id": 5,
+    "nama": "Doa Masuk Kamar Mandi",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَعُوْذُ بِكَ مِنَ الْخُبُثِ وَالْخَبَائِثِ",
+    "tr": "Allahumma inni a'udzu bika minal-khubutsi wal-khaba'its",
+    "idn": "Ya Allah, sesungguhnya aku berlindung kepada-Mu dari setan jantan dan setan betina.",
+    "tentang": "HR. Bukhari & Muslim"
+  },
+  {
+    "id": 6,
+    "nama": "Doa Keluar Kamar Mandi",
+    "ar": "غُفْرَانَكَ",
+    "tr": "Ghufranaka",
+    "idn": "Aku memohon ampunan-Mu (ya Allah).",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 7,
+    "nama": "Doa Sebelum Wudhu",
+    "ar": "بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيْمِ",
+    "tr": "Bismillahir-rahmanir-rahim",
+    "idn": "Dengan nama Allah Yang Maha Pengasih lagi Maha Penyayang.",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 8,
+    "nama": "Doa Sesudah Wudhu",
+    "ar": "أَشْهَدُ أَنْ لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيْكَ لَهُ وَأَشْهَدُ أَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُوْلُهُ",
+    "tr": "Asyhadu an la ilaha illallah wahdahu la syarika lah, wa asyhadu anna Muhammadan 'abduhu wa rasuluh",
+    "idn": "Aku bersaksi bahwa tiada Tuhan yang berhak disembah selain Allah Yang Maha Esa, tidak ada sekutu bagi-Nya, dan aku bersaksi bahwa Muhammad adalah hamba dan utusan-Nya.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 9,
+    "nama": "Doa Masuk Masjid",
+    "ar": "اَللَّهُمَّ افْتَحْ لِيْ أَبْوَابَ رَحْمَتِكَ",
+    "tr": "Allahummaftahli abwaba rahmatik",
+    "idn": "Ya Allah, bukakanlah untukku pintu-pintu rahmat-Mu.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 10,
+    "nama": "Doa Keluar Masjid",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْأَلُكَ مِنْ فَضْلِكَ",
+    "tr": "Allahumma inni as'aluka min fadhlik",
+    "idn": "Ya Allah, sesungguhnya aku memohon kepada-Mu dari karunia-Mu.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 11,
+    "nama": "Doa Setelah Adzan",
+    "ar": "اَللَّهُمَّ رَبَّ هَذِهِ الدَّعْوَةِ التَّامَّةِ وَالصَّلاَةِ الْقَائِمَةِ، آتِ مُحَمَّدًا الْوَسِيْلَةَ وَالْفَضِيْلَةَ وَابْعَثْهُ مَقَامًا مَحْمُوْدًا الَّذِيْ وَعَدْتَهُ",
+    "tr": "Allahumma rabba hadzihid-da'watit-tammah was-shalatil-qa'imah, ati Muhammadanil wasilata wal-fadhilata, wab'atshu maqaman mahmudanil-ladzi wa'adtah",
+    "idn": "Ya Allah, Tuhan pemilik panggilan yang sempurna ini dan shalat yang akan didirikan, berikanlah kepada Muhammad wasilah (kedudukan) dan keutamaan, serta bangkitkanlah ia pada kedudukan yang terpuji yang telah Engkau janjikan kepadanya.",
+    "tentang": "HR. Bukhari"
+  },
+  {
+    "id": 12,
+    "nama": "Doa Iftitah",
+    "ar": "اَللَّهُ أَكْبَرُ كَبِيْرًا وَالْحَمْدُ لِلَّهِ كَثِيْرًا وَسُبْحَانَ اللَّهِ بُكْرَةً وَأَصِيْلاً",
+    "tr": "Allahu akbar kabira, wal-hamdu lillahi katsira, wa subhanallahi bukratan wa ashila",
+    "idn": "Allah Maha Besar dengan sebesar-besarnya, segala puji yang banyak bagi Allah, Maha Suci Allah di waktu pagi dan petang.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 13,
+    "nama": "Doa Sebelum Belajar",
+    "ar": "رَبِّ زِدْنِيْ عِلْمًا وَارْزُقْنِيْ فَهْمًا",
+    "tr": "Rabbi zidni 'ilman warzuqni fahma",
+    "idn": "Ya Tuhanku, tambahkanlah ilmu kepadaku dan berilah aku karunia untuk memahaminya.",
+    "tentang": "QS. Thaha: 114 (dengan tambahan)"
+  },
+  {
+    "id": 14,
+    "nama": "Doa Setelah Belajar",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْتَوْدِعُكَ مَا عَلَّمْتَنِيْهِ فَارْدُدْهُ إِلَيَّ عِنْدَ حَاجَتِيْ إِلَيْهِ",
+    "tr": "Allahumma inni astaudi'uka ma 'allamtanihi, fardud-hu ilayya 'inda hajati ilaih",
+    "idn": "Ya Allah, sesungguhnya aku menitipkan kepada-Mu apa yang telah Engkau ajarkan kepadaku, maka kembalikanlah ia kepadaku ketika aku membutuhkannya.",
+    "tentang": "Doa ma'tsur"
+  },
+  {
+    "id": 15,
+    "nama": "Doa Untuk Kedua Orang Tua",
+    "ar": "رَبِّ اغْفِرْ لِيْ وَلِوَالِدَيَّ وَارْحَمْهُمَا كَمَا رَبَّيَانِيْ صَغِيْرًا",
+    "tr": "Rabbighfirli wa li-walidayya warhamhuma kama rabbayani shaghira",
+    "idn": "Ya Tuhanku, ampunilah aku dan kedua orang tuaku dan kasihilah mereka sebagaimana mereka mengasihiku sewaktu kecil.",
+    "tentang": "QS. Al-Isra: 24"
+  },
+  {
+    "id": 16,
+    "nama": "Doa Memohon Ampunan",
+    "ar": "رَبَّنَا ظَلَمْنَا أَنْفُسَنَا وَإِنْ لَمْ تَغْفِرْ لَنَا وَتَرْحَمْنَا لَنَكُوْنَنَّ مِنَ الْخَاسِرِيْنَ",
+    "tr": "Rabbana zhalamna anfusana wa illam taghfirlana wa tarhamna lanakunanna minal-khasirin",
+    "idn": "Ya Tuhan kami, kami telah menzhalimi diri kami sendiri. Jika Engkau tidak mengampuni kami dan tidak menyayangi kami, niscaya kami termasuk orang-orang yang merugi.",
+    "tentang": "QS. Al-A'raf: 23"
+  },
+  {
+    "id": 17,
+    "nama": "Doa Kebaikan Dunia Akhirat",
+    "ar": "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الْآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ",
+    "tr": "Rabbana atina fid-dunya hasanatan wa fil-akhirati hasanatan wa qina 'adzabannar",
+    "idn": "Ya Tuhan kami, berilah kami kebaikan di dunia dan kebaikan di akhirat, dan peliharalah kami dari siksa api neraka.",
+    "tentang": "QS. Al-Baqarah: 201"
+  },
+  {
+    "id": 18,
+    "nama": "Doa Memohon Kemudahan",
+    "ar": "اَللَّهُمَّ لاَ سَهْلَ إِلاَّ مَا جَعَلْتَهُ سَهْلاً وَأَنْتَ تَجْعَلُ الْحَزْنَ إِذَا شِئْتَ سَهْلاً",
+    "tr": "Allahumma la sahla illa ma ja'altahu sahla, wa anta taj'alul-hazna idza syi'ta sahla",
+    "idn": "Ya Allah, tidak ada kemudahan kecuali yang Engkau jadikan mudah, dan Engkau menjadikan kesedihan, jika Engkau kehendaki, menjadi mudah.",
+    "tentang": "HR. Ibnu Hibban"
+  },
+  {
+    "id": 19,
+    "nama": "Doa Mohon Diberi Petunjuk",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْأَلُكَ الْهُدَى وَالتُّقَى وَالْعَفَافَ وَالْغِنَى",
+    "tr": "Allahumma inni as'alukal-huda wat-tuqa wal-'afafa wal-ghina",
+    "idn": "Ya Allah, sesungguhnya aku memohon kepada-Mu petunjuk, ketakwaan, terjaga dari hal yang haram, dan kekayaan (yang dicukupkan).",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 20,
+    "nama": "Doa Naik Kendaraan",
+    "ar": "سُبْحَانَ الَّذِيْ سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِيْنَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُوْنَ",
+    "tr": "Subhanal-ladzi sakhkhara lana hadza wa ma kunna lahu muqrinin, wa inna ila rabbina lamunqalibun",
+    "idn": "Maha Suci Allah yang telah menundukkan semua ini bagi kami, padahal kami sebelumnya tidak mampu menguasainya, dan sesungguhnya hanya kepada Tuhan kami, kami akan kembali.",
+    "tentang": "QS. Az-Zukhruf: 13-14"
+  },
+  {
+    "id": 21,
+    "nama": "Doa Bepergian",
+    "ar": "اَللَّهُمَّ هَوِّنْ عَلَيْنَا سَفَرَنَا هَذَا وَاطْوِ عَنَّا بُعْدَهُ",
+    "tr": "Allahumma hawwin 'alayna safarana hadza wathwi 'anna bu'dah",
+    "idn": "Ya Allah, mudahkanlah bagi kami perjalanan ini, dan dekatkanlah jarak yang jauh ini bagi kami.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 22,
+    "nama": "Doa Saat Hujan",
+    "ar": "اَللَّهُمَّ صَيِّبًا نَافِعًا",
+    "tr": "Allahumma shayyiban nafi'a",
+    "idn": "Ya Allah, jadikanlah (hujan ini) hujan yang bermanfaat.",
+    "tentang": "HR. Bukhari"
+  },
+  {
+    "id": 23,
+    "nama": "Doa Melihat Petir",
+    "ar": "سُبْحَانَ الَّذِيْ يُسَبِّحُ الرَّعْدُ بِحَمْدِهِ وَالْمَلاَئِكَةُ مِنْ خِيْفَتِهِ",
+    "tr": "Subhanal-ladzi yusabbihur-ra'du bihamdihi wal-mala'ikatu min khifatih",
+    "idn": "Maha Suci Allah yang petir bertasbih dengan memuji-Nya, dan para malaikat (juga bertasbih) karena rasa takut kepada-Nya.",
+    "tentang": "HR. Malik"
+  },
+  {
+    "id": 24,
+    "nama": "Doa Saat Marah",
+    "ar": "أَعُوْذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيْمِ",
+    "tr": "A'udzu billahi minasy-syaithanir-rajim",
+    "idn": "Aku berlindung kepada Allah dari setan yang terkutuk.",
+    "tentang": "HR. Bukhari & Muslim"
+  },
+  {
+    "id": 25,
+    "nama": "Doa Menjenguk Orang Sakit",
+    "ar": "اَللَّهُمَّ رَبَّ النَّاسِ أَذْهِبِ الْبَأْسَ اِشْفِ أَنْتَ الشَّافِيْ لاَ شِفَاءَ إِلاَّ شِفَاؤُكَ شِفَاءً لاَ يُغَادِرُ سَقَمًا",
+    "tr": "Allahumma rabban-nas, adzhibil ba's, isyfi antasy-syafi la syifa'a illa syifa'uka syifa'an la yughadiru saqama",
+    "idn": "Ya Allah, Tuhan manusia, hilangkanlah penyakit ini, sembuhkanlah, Engkau-lah Yang Maha Penyembuh, tidak ada kesembuhan kecuali kesembuhan dari-Mu, kesembuhan yang tidak meninggalkan penyakit.",
+    "tentang": "HR. Bukhari & Muslim"
+  },
+  {
+    "id": 26,
+    "nama": "Doa Untuk Sakit",
+    "ar": "بِسْمِ اللَّهِ، أَعُوْذُ بِاللَّهِ وَقُدْرَتِهِ مِنْ شَرِّ مَا أَجِدُ وَأُحَاذِرُ",
+    "tr": "Bismillah, a'udzu billahi wa qudratihi min syarri ma ajidu wa uhadzir",
+    "idn": "Dengan nama Allah, aku berlindung kepada Allah dan kekuasaan-Nya dari kejahatan yang aku rasakan dan aku khawatirkan.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 27,
+    "nama": "Doa Ketika Mengalami Kesulitan",
+    "ar": "حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيْلُ",
+    "tr": "Hasbunallahu wa ni'mal-wakil",
+    "idn": "Cukuplah Allah sebagai (Pelindung) kami, dan Dia adalah sebaik-baik Penolong.",
+    "tentang": "QS. Ali Imran: 173"
+  },
+  {
+    "id": 28,
+    "nama": "Doa Memohon Keluarga Bahagia",
+    "ar": "رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا وَذُرِّيَّاتِنَا قُرَّةَ أَعْيُنٍ وَاجْعَلْنَا لِلْمُتَّقِيْنَ إِمَامًا",
+    "tr": "Rabbana hab lana min azwajina wa dzurriyyatina qurrata a'yunin waj'alna lil-muttaqina imama",
+    "idn": "Ya Tuhan kami, anugerahkanlah kepada kami pasangan kami dan keturunan kami sebagai penyenang hati (kami), dan jadikanlah kami pemimpin bagi orang-orang yang bertakwa.",
+    "tentang": "QS. Al-Furqan: 74"
+  },
+  {
+    "id": 29,
+    "nama": "Doa Memohon Rezeki",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْأَلُكَ عِلْمًا نَافِعًا وَرِزْقًا طَيِّبًا وَعَمَلاً مُتَقَبَّلاً",
+    "tr": "Allahumma inni as'aluka 'ilman nafi'an wa rizqan thayyiban wa 'amalan mutaqabbala",
+    "idn": "Ya Allah, sesungguhnya aku memohon kepada-Mu ilmu yang bermanfaat, rezeki yang baik, dan amal yang diterima.",
+    "tentang": "HR. Ibnu Majah"
+  },
+  {
+    "id": 30,
+    "nama": "Doa Memohon Perlindungan",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَعُوْذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ وَالْعَجْزِ وَالْكَسَلِ وَالْبُخْلِ وَالْجُبْنِ وَضَلَعِ الدَّيْنِ وَغَلَبَةِ الرِّجَالِ",
+    "tr": "Allahumma inni a'udzu bika minal-hammi wal-hazani wal-'ajzi wal-kasali wal-bukhli wal-jubni wa dhala'id-dayni wa ghalabatir-rijal",
+    "idn": "Ya Allah, sesungguhnya aku berlindung kepada-Mu dari rasa risau dan sedih, dari lemah dan malas, dari sifat kikir dan pengecut, dari beban hutang dan tekanan orang-orang.",
+    "tentang": "HR. Bukhari"
+  },
+  {
+    "id": 31,
+    "nama": "Doa Sebelum Bepergian Jauh",
+    "ar": "اَللَّهُمَّ إِنَّا نَسْأَلُكَ فِيْ سَفَرِنَا هَذَا الْبِرَّ وَالتَّقْوَى وَمِنَ الْعَمَلِ مَا تَرْضَى",
+    "tr": "Allahumma inna nas'aluka fi safarina hadzal-birra wat-taqwa, wa minal-'amali ma tardha",
+    "idn": "Ya Allah, sesungguhnya kami memohon kepada-Mu dalam perjalanan kami ini kebaikan dan ketakwaan, serta amal yang Engkau ridhai.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 32,
+    "nama": "Doa Pulang dari Bepergian",
+    "ar": "آيِبُوْنَ تَائِبُوْنَ عَابِدُوْنَ لِرَبِّنَا حَامِدُوْنَ",
+    "tr": "Ayibuna ta'ibuna 'abiduna li-rabbina hamidun",
+    "idn": "Kami adalah orang-orang yang kembali, bertaubat, beribadah, dan memuji Tuhan kami.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 33,
+    "nama": "Doa Masuk Rumah",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْأَلُكَ خَيْرَ الْمَوْلِجِ وَخَيْرَ الْمَخْرَجِ بِسْمِ اللَّهِ وَلَجْنَا وَبِسْمِ اللَّهِ خَرَجْنَا وَعَلَى اللَّهِ رَبِّنَا تَوَكَّلْنَا",
+    "tr": "Allahumma inni as'aluka khayral-mawliji wa khayral-makhraji, bismillahi walajna wa bismillahi kharajna, wa 'alallahi rabbina tawakkalna",
+    "idn": "Ya Allah, sesungguhnya aku memohon kepada-Mu kebaikan tempat masuk dan kebaikan tempat keluar, dengan nama Allah kami masuk, dan dengan nama Allah kami keluar, dan kepada Allah Tuhan kami, kami bertawakal.",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 34,
+    "nama": "Doa Keluar Rumah",
+    "ar": "بِسْمِ اللَّهِ تَوَكَّلْتُ عَلَى اللَّهِ لاَ حَوْلَ وَلاَ قُوَّةَ إِلاَّ بِاللَّهِ",
+    "tr": "Bismillahi tawakkaltu 'alallahi la haula wa la quwwata illa billah",
+    "idn": "Dengan nama Allah, aku bertawakal kepada Allah, tidak ada daya dan kekuatan kecuali dengan pertolongan Allah.",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 35,
+    "nama": "Doa Memohon Ilmu yang Bermanfaat",
+    "ar": "اَللَّهُمَّ انْفَعْنِيْ بِمَا عَلَّمْتَنِيْ وَعَلِّمْنِيْ مَا يَنْفَعُنِيْ وَزِدْنِيْ عِلْمًا",
+    "tr": "Allahummanfa'ni bima 'allamtani, wa 'allimni ma yanfa'uni, wa zidni 'ilma",
+    "idn": "Ya Allah, jadikanlah bermanfaat apa yang Engkau ajarkan kepadaku, ajarkanlah kepadaku apa yang bermanfaat bagiku, dan tambahkanlah ilmu kepadaku.",
+    "tentang": "HR. Tirmidzi"
+  },
+  {
+    "id": 36,
+    "nama": "Doa Menjelang Subuh",
+    "ar": "اَللَّهُمَّ بِكَ أَصْبَحْنَا وَبِكَ أَمْسَيْنَا وَبِكَ نَحْيَا وَبِكَ نَمُوْتُ وَإِلَيْكَ النُّشُوْرُ",
+    "tr": "Allahumma bika ashbahna wa bika amsayna, wa bika nahya wa bika namut, wa ilaykan-nusyur",
+    "idn": "Ya Allah, dengan-Mu kami memasuki waktu pagi, dengan-Mu kami memasuki waktu sore, dengan-Mu kami hidup, dengan-Mu kami mati, dan hanya kepada-Mu (kami) dikumpulkan.",
+    "tentang": "HR. Tirmidzi"
+  },
+  {
+    "id": 37,
+    "nama": "Doa Memohon Kesabaran",
+    "ar": "رَبَّنَا أَفْرِغْ عَلَيْنَا صَبْرًا وَثَبِّتْ أَقْدَامَنَا وَانْصُرْنَا عَلَى الْقَوْمِ الْكَافِرِيْنَ",
+    "tr": "Rabbana afrigh 'alayna shabran wa tsabbit aqdamana wanshurna 'alal-qawmil-kafirin",
+    "idn": "Ya Tuhan kami, limpahkanlah kesabaran atas kami, kokohkanlah langkah kami, dan tolonglah kami melawan kaum yang kafir.",
+    "tentang": "QS. Al-Baqarah: 250"
+  },
+  {
+    "id": 38,
+    "nama": "Doa Memohon Diberi Anak Saleh",
+    "ar": "رَبِّ هَبْ لِيْ مِنَ الصَّالِحِيْنَ",
+    "tr": "Rabbi hab li minash-shalihin",
+    "idn": "Ya Tuhanku, anugerahkanlah kepadaku (keturunan) yang termasuk orang-orang yang saleh.",
+    "tentang": "QS. As-Saffat: 100"
+  },
+  {
+    "id": 39,
+    "nama": "Doa Sebelum Bercermin",
+    "ar": "اَللَّهُمَّ كَمَا حَسَّنْتَ خَلْقِيْ فَحَسِّنْ خُلُقِيْ",
+    "tr": "Allahumma kama hassanta khalqi fahassin khuluqi",
+    "idn": "Ya Allah, sebagaimana Engkau telah memperindah penciptaanku, maka perindahkanlah akhlakku.",
+    "tentang": "HR. Ahmad"
+  },
+  {
+    "id": 40,
+    "nama": "Doa Memakai Baju Baru",
+    "ar": "اَلْحَمْدُ لِلَّهِ الَّذِيْ كَسَانِيْ هَذَا وَرَزَقَنِيْهِ مِنْ غَيْرِ حَوْلٍ مِنِّيْ وَلاَ قُوَّةٍ",
+    "tr": "Alhamdulillahil-ladzi kasani hadza wa razaqanihi min ghayri hawlin minni wa la quwwah",
+    "idn": "Segala puji bagi Allah yang telah memberikan pakaian ini kepadaku dan menganugerahkan kepadaku tanpa daya dan kekuatan dariku.",
+    "tentang": "HR. Tirmidzi"
+  },
+  {
+    "id": 41,
+    "nama": "Doa Setelah Mendengar Adzan",
+    "ar": "وَأَنَا أَشْهَدُ أَنْ لاَ إِلَهَ إِلاَّ اللَّهُ وَحْدَهُ لاَ شَرِيْكَ لَهُ وَأَنَّ مُحَمَّدًا عَبْدُهُ وَرَسُوْلُهُ، رَضِيْتُ بِاللَّهِ رَبًّا وَبِمُحَمَّدٍ رَسُوْلاً وَبِالْإِسْلاَمِ دِيْنًا",
+    "tr": "Wa ana asyhadu an la ilaha illallahu wahdahu la syarika lah, wa anna Muhammadan 'abduhu wa rasuluh, radhitu billahi rabba, wa bi-Muhammadin rasula, wa bil-islami dina",
+    "idn": "Dan aku bersaksi bahwa tiada Tuhan selain Allah Yang Maha Esa, tidak ada sekutu bagi-Nya, dan Muhammad adalah hamba dan utusan-Nya. Aku ridha Allah sebagai Tuhan, Muhammad sebagai rasul, dan Islam sebagai agama.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 42,
+    "nama": "Doa Mohon Diwafatkan Husnul Khatimah",
+    "ar": "اَللَّهُمَّ اخْتِمْ لَنَا بِحُسْنِ الْخَاتِمَةِ وَلاَ تَخْتِمْ عَلَيْنَا بِسُوْءِ الْخَاتِمَةِ",
+    "tr": "Allahummakhtim lana bi-husnil-khatimah, wa la takhtim 'alayna bisu'il-khatimah",
+    "idn": "Ya Allah, akhirilah hidup kami dengan akhir yang baik, dan janganlah Engkau akhiri hidup kami dengan akhir yang buruk.",
+    "tentang": "Doa ma'tsur"
+  },
+  {
+    "id": 43,
+    "nama": "Doa Memohon Keberkahan Umur",
+    "ar": "اَللَّهُمَّ بَارِكْ لَنَا فِيْ أَعْمَارِنَا وَوَفِّقْنَا لِمَا تُحِبُّ وَتَرْضَى",
+    "tr": "Allahumma barik lana fi a'marina wa waffiqna lima tuhibbu wa tardha",
+    "idn": "Ya Allah, berkahilah umur kami, dan berikanlah taufik kepada kami untuk melakukan apa yang Engkau cintai dan ridhai.",
+    "tentang": "Doa ma'tsur"
+  },
+  {
+    "id": 44,
+    "nama": "Doa Memohon Diberi Hidayah",
+    "ar": "اَللَّهُمَّ إِنِّيْ أَسْأَلُكَ هُدًى وَتُقًى وَعَفَافًا وَغِنًى",
+    "tr": "Allahumma inni as'aluka hudan wa tuqan wa 'afafan wa ghina",
+    "idn": "Ya Allah, sesungguhnya aku memohon kepada-Mu petunjuk, ketakwaan, terjaga dari yang haram, dan kekayaan.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 45,
+    "nama": "Doa Menutup Majelis",
+    "ar": "سُبْحَانَكَ اللَّهُمَّ وَبِحَمْدِكَ، أَشْهَدُ أَنْ لاَ إِلَهَ إِلاَّ أَنْتَ، أَسْتَغْفِرُكَ وَأَتُوْبُ إِلَيْكَ",
+    "tr": "Subhanaka Allahumma wa bihamdik, asyhadu an la ilaha illa anta, astaghfiruka wa atubu ilayk",
+    "idn": "Maha Suci Engkau ya Allah, dan dengan memuji-Mu, aku bersaksi bahwa tiada Tuhan selain Engkau, aku memohon ampun dan bertaubat kepada-Mu.",
+    "tentang": "HR. Tirmidzi"
+  },
+  {
+    "id": 46,
+    "nama": "Doa Pelunasan Hutang",
+    "ar": "اَللَّهُمَّ اكْفِنِيْ بِحَلاَلِكَ عَنْ حَرَامِكَ وَأَغْنِنِيْ بِفَضْلِكَ عَمَّنْ سِوَاكَ",
+    "tr": "Allahummakfini bi-halalika 'an haramika wa aghnini bi-fadhlika 'amman siwak",
+    "idn": "Ya Allah, cukupkanlah aku dengan yang halal-Mu sehingga tidak butuh kepada yang haram-Mu, dan cukupkanlah aku dengan karunia-Mu sehingga tidak butuh kepada selain-Mu.",
+    "tentang": "HR. Tirmidzi"
+  },
+  {
+    "id": 47,
+    "nama": "Doa Khatam Al-Qur'an",
+    "ar": "اَللَّهُمَّ ارْحَمْنِيْ بِالْقُرْآنِ وَاجْعَلْهُ لِيْ إِمَامًا وَنُوْرًا وَهُدًى وَرَحْمَةً",
+    "tr": "Allahummarhamni bil-qur'ani waj'alhu li imaman wa nuran wa hudan wa rahmah",
+    "idn": "Ya Allah, rahmatilah aku dengan Al-Qur'an, dan jadikanlah ia sebagai imam, cahaya, petunjuk, dan rahmat bagiku.",
+    "tentang": "Doa ma'tsur"
+  },
+  {
+    "id": 48,
+    "nama": "Doa Saat Ditimpa Musibah",
+    "ar": "إِنَّا لِلَّهِ وَإِنَّا إِلَيْهِ رَاجِعُوْنَ، اَللَّهُمَّ أْجُرْنِيْ فِيْ مُصِيْبَتِيْ وَأَخْلِفْ لِيْ خَيْرًا مِنْهَا",
+    "tr": "Inna lillahi wa inna ilayhi raji'un, Allahumma'jurni fi mushibati wa akhlif li khayran minha",
+    "idn": "Sesungguhnya kami milik Allah dan hanya kepada-Nya kami akan kembali. Ya Allah, berilah pahala untukku atas musibah yang menimpaku, dan gantikanlah bagiku dengan yang lebih baik darinya.",
+    "tentang": "HR. Muslim"
+  },
+  {
+    "id": 49,
+    "nama": "Doa Memohon Diberi Kesehatan",
+    "ar": "اَللَّهُمَّ عَافِنِيْ فِيْ بَدَنِيْ، اَللَّهُمَّ عَافِنِيْ فِيْ سَمْعِيْ، اَللَّهُمَّ عَافِنِيْ فِيْ بَصَرِيْ",
+    "tr": "Allahumma 'afini fi badani, Allahumma 'afini fi sam'i, Allahumma 'afini fi bashari",
+    "idn": "Ya Allah, berikanlah kesehatan pada tubuhku, ya Allah berikanlah kesehatan pada pendengaranku, ya Allah berikanlah kesehatan pada penglihatanku.",
+    "tentang": "HR. Abu Dawud"
+  },
+  {
+    "id": 50,
+    "nama": "Doa Penutup Hari",
+    "ar": "اَللَّهُمَّ مَا أَصْبَحَ بِيْ مِنْ نِعْمَةٍ أَوْ بِأَحَدٍ مِنْ خَلْقِكَ فَمِنْكَ وَحْدَكَ لاَ شَرِيْكَ لَكَ، فَلَكَ الْحَمْدُ وَلَكَ الشُّكْرُ",
+    "tr": "Allahumma ma ashbaha bi min ni'matin aw bi-ahadin min khalqika faminka wahdaka la syarika laka, fa-lakal-hamdu wa lakasy-syukr",
+    "idn": "Ya Allah, nikmat apa saja yang aku peroleh hari ini atau yang diperoleh seseorang dari ciptaan-Mu, maka itu hanya dari-Mu semata, tidak ada sekutu bagi-Mu. Maka untuk-Mu segala puji dan syukur.",
+    "tentang": "HR. Abu Dawud"
+  }
+]

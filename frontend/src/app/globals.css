@@ -1,21 +1,59 @@
 @import "tailwindcss";
 
+/* ─── Self-hosted Arabic fonts ────────────────────────────────────────
+ * Amiri Quran (mushaf glyphs) and Amiri (text glyphs). Subset to the
+ * arabic block only — latin chars fall back to system sans. Hosted
+ * locally so the app works completely offline / without Google Fonts.
+ * ──────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Amiri Quran";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/amiri-quran-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+@font-face {
+  font-family: "Amiri";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/amiri-400-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+/* ─── Design system tokens ────────────────────────────────────────────
+ * Light theme by default. Dark mode is intentionally disabled until every
+ * component has matching `dark:` variants — half-implemented dark mode
+ * was making text unreadable on OS-level dark preference.
+ * ──────────────────────────────────────────────────────────────────── */
 :root {
-  --background: #f6faf8;
-  --foreground: #0f1f1a;
+  color-scheme: light;
+  --background: #f4f8f5;
+  --background-gradient: linear-gradient(
+    180deg,
+    #f4faf6 0%,
+    #f7fbf8 50%,
+    #fdfefd 100%
+  );
+  --surface: #ffffff;
+  --surface-muted: #f6faf7;
+  --border: #e3ece6;
+  --foreground: #0f1d18;
+  --foreground-muted: #4a5a52;
+  --foreground-subtle: #6c7c74;
+  --primary: #047857; /* emerald-700 */
+  --primary-hover: #065f46; /* emerald-800 */
+  --primary-soft: #d1fae5; /* emerald-100 */
+  --accent: #b45309; /* amber-700 */
+  --accent-soft: #fef3c7; /* amber-100 */
+  --danger: #b91c1c; /* red-700 */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-arabic: "Amiri", "Scheherazade New", "Traditional Arabic", serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a1311;
-    --foreground: #e7f0ec;
-  }
+  --font-arabic: "Amiri Quran", "Amiri", "Scheherazade New", "Traditional Arabic", serif;
 }
 
 html {
@@ -23,26 +61,313 @@ html {
 }
 
 body {
-  background: var(--background);
+  background: var(--background-gradient);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* Arabic typography — larger, more breathing room. The Amiri font is
+ * loaded from Google Fonts via layout.tsx. */
 .arabic {
   direction: rtl;
   font-family: var(--font-arabic);
-  line-height: 2.15;
+  line-height: 2.1;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 
+/* Heading rhythm — bigger Arabic on larger viewports */
+.arabic-display {
+  font-size: clamp(1.75rem, 1rem + 2.5vw, 2.5rem);
+  line-height: 1.9;
+}
+.arabic-body {
+  /* `--arabic-scale` (default 1) is set per-reader from the display-settings
+   * panel on the surah page so readers can size the mushaf text to taste. */
+  font-size: calc(clamp(1.5rem, 0.9rem + 1.8vw, 1.875rem) * var(--arabic-scale, 1));
+  line-height: 2.1;
+}
+
+/* Custom scrollbar (light theme only) */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(16, 122, 87, 0.35);
+  background: #cbd6d0;
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #97a8a0;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Selection */
+::selection {
+  background: #a7f3d0;
+  color: #064e3b;
+}
+
+/* Reusable component classes ─────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 2px rgba(15, 29, 24, 0.04),
+    0 1px 3px rgba(15, 29, 24, 0.03);
+}
+.card-hover {
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.card-hover:hover {
+  border-color: var(--primary);
+  box-shadow:
+    0 4px 6px -1px rgba(4, 120, 87, 0.08),
+    0 2px 4px -2px rgba(4, 120, 87, 0.08);
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0.625rem;
+  padding: 0.625rem 1.25rem;
+  transition: background 0.15s;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.9375rem;
+  color: var(--foreground);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.12);
+}
+.input::placeholder {
+  color: var(--foreground-subtle);
+}
+
+/* Soft animated shimmer for skeleton loaders — keeps perceived load fast. */
+@keyframes skeleton-shine {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #eef3f0 0%,
+    #f7faf8 50%,
+    #eef3f0 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* Tactile entrance for cards/lists rendered after data arrives. */
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-in-up {
+  animation: fade-in-up 0.22s ease-out both;
+}
+
+/* Currently-reciting ayat — soft emerald ring + glow that follows audio
+ * playback on the surah page. */
+@keyframes ayat-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(4, 120, 87, 0.45),
+      0 0 0 5px rgba(16, 185, 129, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(4, 120, 87, 0.6),
+      0 0 0 8px rgba(16, 185, 129, 0.16);
+  }
+}
+.ayat-playing {
+  border-color: var(--primary) !important;
+  background: linear-gradient(180deg, #f0fdf6 0%, #ffffff 60%);
+  animation: ayat-pulse 2.4s ease-in-out infinite;
+}
+
+/* Subtle chip for tags / inline badges. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.chip-gold {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Iconified section heading — used on home dashboards. */
+.section-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--foreground-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Make .arabic feel right at home in cards (subtle spacing). */
+.arabic-tight {
+  line-height: 1.85;
+}
+
+/* ─── Futuristic / modern utilities for the home page ─────────────── */
+
+/* Slow drifting aurora — uses two emerald/teal blobs in keyframes. */
+@keyframes aurora-shift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(2%, -3%, 0) rotate(8deg);
+  }
+}
+.aurora {
+  animation: aurora-shift 18s ease-in-out infinite;
+}
+
+/* Glassmorphism surface — works on top of any background. */
+.glass {
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 8px 24px -8px rgba(15, 29, 24, 0.08),
+    0 2px 6px -2px rgba(15, 29, 24, 0.04);
+}
+.glass-dark {
+  background: rgba(15, 29, 24, 0.55);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f0fdf4;
+}
+
+/* Subtle dot grid for sectioned backgrounds — gives a "panel" feel. */
+.dot-grid {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(15, 29, 24, 0.07) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+}
+
+/* Soft glow ring on hover — used by quick-action pills. */
+.glow-on-hover {
+  transition:
+    box-shadow 0.25s ease,
+    transform 0.2s ease;
+}
+.glow-on-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 4px rgba(16, 185, 129, 0.08),
+    0 6px 20px -6px rgba(16, 185, 129, 0.25);
+}
+
+/* Marquee-style horizontal scroller (mobile quick actions). */
+.scroll-row {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* Animated gradient text for the headline. */
+@keyframes gradient-pan {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+.gradient-text {
+  background: linear-gradient(
+    90deg,
+    #047857 0%,
+    #0891b2 35%,
+    #6366f1 70%,
+    #047857 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 8s ease-in-out infinite;
+}
+
+/* Stat pill row at top of dashboard. */
+.stat-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--foreground-muted);
+}
+.stat-pill strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--foreground);
 }

@@ -1,0 +1,277 @@
+"use client";
+
+import {
+  Activity,
+  AlertTriangle,
+  Bell,
+  BookOpen,
+  Bookmark,
+  Boxes,
+  Brain,
+  Clock,
+  Cpu,
+  Database,
+  ExternalLink,
+  FileText,
+  KeyRound,
+  Languages,
+  Library,
+  Loader2,
+  ScrollText,
+  Shield,
+  Smartphone,
+  Tag,
+  Users,
+  Zap,
+} from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import useSWR from "swr";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { fetcher, fetcherFull } from "@/lib/api";
+import { ErrorBox, Spinner } from "@/components/Spinner";
+import { PageHeader, SectionHeader } from "@/components/admin/PageHeader";
+import { RefreshButton } from "@/components/admin/RefreshButton";
+import { StatCard } from "@/components/admin/StatCard";
+
+interface Stats {
+  users: { total: number; admins: number };
+  content: {
+    surah: number;
+    ayat: number;
+    tafsir: number;
+    translation: number;
+    doa: number;
+    asbabunNuzul: number;
+    topic: number;
+  };
+  userActivity: { bookmark: number; hafalan: number; deviceTokens: number };
+}
+
+interface SystemHealth {
+  database: { size: string };
+  redis: { connected: boolean; hitRate?: number } | null;
+  node: {
+    uptimeSeconds: number;
+    memoryUsage: { heapUsed: number; heapTotal: number };
+    env: string;
+  };
+}
+
+interface SeedLog {
+  jobName: string;
+  status: "pending" | "running" | "done" | "error" | "cancelled";
+  totalItems: number;
+  doneItems: number;
+  errorMsg: string | null;
+  updatedAt: string;
+}
+
+interface AuditEntry {
+  id: number;
+  action: string;
+  actorEmail: string | null;
+  target: string | null;
+  createdAt: string;
+}
+
+const CONTENT_COLORS = [
+  "#10b981",
+  "#6366f1",
+  "#f59e0b",
+  "#ec4899",
+  "#0ea5e9",
+  "#8b5cf6",
+  "#14b8a6",
+];
+
+function formatUptime(s: number): string {
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}h ${h}j`;
+  if (h > 0) return `${h}j ${m}m`;
+  return `${m}m`;
+}
+
+function fmtRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return "baru saja";
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m} menit lalu`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} jam lalu`;
+  return `${Math.floor(h / 24)} hari lalu`;
+}
+
+function verbTone(action: string): string {
+  const last = action.split(".").pop() ?? "";
+  if (/^(create|promote|add|send|start|export|enable)/.test(last))
+    return "bg-emerald-50 text-emerald-700";
+  if (/^(update|edit|trigger|run|rotate)/.test(last))
+    return "bg-amber-50 text-amber-700";
+  if (/^(delete|demote|remove|cancel|revoke|disable)/.test(last))
+    return "bg-rose-50 text-rose-700";
+  return "bg-slate-100 text-slate-600";
+}
+
+export default function AdminDashboardPage() {
+  const statsSwr = useSWR<Stats>("/admin/stats", fetcher);
+  const healthSwr = useSWR<SystemHealth>("/admin/system", fetcher, {
+    refreshInterval: 60_000,
+  });
+  const seedSwr = useSWR<SeedLog[]>("/seed/status", fetcher, {
+    refreshInterval: 15_000,
+  });
+  const auditSwr = useSWR<{ data: AuditEntry[] }>(
+    "/admin/audit?limit=5",
+    // The audit fetcher needs `meta` skipped — fetcherFull returns
+    // `{data, meta}`; we only need the rows here.
+    (key: string) => fetcherFull<AuditEntry[]>(key),
+  );
+
+  const { data: stats } = statsSwr;
+  const { data: health } = healthSwr;
+  const { data: seedLogs } = seedSwr;
+  const recentAudit = auditSwr.data?.data ?? [];
+
+  const runningSeed = seedLogs?.find((s) => s.status === "running");
+  const cancelledOrErrored =
+    seedLogs?.filter(
+      (s) => (s.status === "error" || s.status === "cancelled") && s.doneItems > 0,
+    ) ?? [];
+
+  if (statsSwr.isLoading && !stats) return <Spinner label="Memuat statistik…" />;
+  if (statsSwr.error)
+    return <ErrorBox message={(statsSwr.error as Error).message} />;
+  if (!stats) return null;
+
+  const heapPct = health
+    ? (health.node.memoryUsage.heapUsed /
+        (health.node.memoryUsage.heapTotal || 1)) *
+      100
+    : 0;
+  const heapHigh = heapPct > 85;
+  const isProd = health?.node.env === "production";
+
+  const contentData = [
+    { name: "Ayat", value: stats.content.ayat },
+    { name: "Terjemahan", value: stats.content.translation },
+    { name: "Tafsir", value: stats.content.tafsir },
+    { name: "Doa", value: stats.content.doa },
+    { name: "Asbab", value: stats.content.asbabunNuzul },
+    { name: "Topik", value: stats.content.topic },
+    { name: "Surat", value: stats.content.surah },
+  ];
+
+  const activityData = [
+    { name: "Bookmark", value: stats.userActivity.bookmark },
+    { name: "Hafalan", value: stats.userActivity.hafalan },
+    { name: "Device", value: stats.userActivity.deviceTokens },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description={
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            <span>Ringkasan kondisi sistem & aktivitas pengguna.</span>
+            {health && (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  isProd
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {health.node.env ?? "unknown"}
+              </span>
+            )}
+          </span>
+        }
+        action={
+          <RefreshButton
+            onRefresh={() =>
+              Promise.all([
+                statsSwr.mutate(),
+                healthSwr.mutate(),
+                seedSwr.mutate(),
+                auditSwr.mutate(),
+              ])
+            }
+          />
+        }
+      />
+
+      {/* Running seed banner */}
+      {runningSeed && (
+        <Link
+          href="/admin/seed"
+          className="block rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 hover:bg-sky-50 transition"
+        >
+          <div className="flex items-start gap-3">
+            <Loader2 size={18} className="text-sky-600 animate-spin mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sky-900 text-sm">
+                Seed job sedang berjalan: {runningSeed.jobName}
+              </p>
+              <p className="text-xs text-sky-700 mt-0.5">
+                {runningSeed.doneItems.toLocaleString("id-ID")} /{" "}
+                {runningSeed.totalItems.toLocaleString("id-ID")} item · klik untuk
+                buka monitor →
+              </p>
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* Resumable seed banner (gagal/cancelled dengan progress) */}
+      {!runningSeed && cancelledOrErrored.length > 0 && (
+        <Link
+          href="/admin/seed"
+          className="block rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 hover:bg-amber-50 transition"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-amber-900 text-sm">
+                {cancelledOrErrored.length} seed job bisa dilanjutkan
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {cancelledOrErrored.map((s) => s.jobName).join(", ")} — klik Resume
+                di halaman Seed untuk lanjut dari titik terakhir.
+              </p>
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* System health quick row */}
+      <section>
+        <SectionHeader title="System status" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <HealthTile
+            icon={<Activity size={14} className="text-emerald-600" />}
+            label="Uptime"
+            value={
+              health
+                ? formatUptime(health.node.uptimeSeconds)
+                : "—"
+            }
+            href="/admin/system"
+          />
+          <HealthTile
+            icon={<Database size

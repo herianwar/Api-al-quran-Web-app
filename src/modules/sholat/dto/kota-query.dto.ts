@@ -3,9 +3,14 @@ import { Transform } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class KotaQueryDto {
-  @ApiProperty({ description: 'Nama provinsi', example: 'Jawa Barat' })
+  @ApiPropertyOptional({
+    description:
+      'Nama provinsi. Kosongkan untuk mengambil seluruh kota (518 entri).',
+    example: 'Jawa Barat',
+  })
+  @IsOptional()
   @IsString()
-  provinsi: string;
+  provinsi?: string;
 }
 
 export class JadwalQueryDto {

@@ -5,5 +5,6 @@ import { SholatService } from './sholat.service';
 @Module({
   controllers: [SholatController],
   providers: [SholatService],
+  exports: [SholatService],
 })
 export class SholatModule {}

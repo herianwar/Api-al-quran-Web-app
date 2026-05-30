@@ -1,0 +1,132 @@
+[
+  {
+    "surah": 1,
+    "ayat": 1,
+    "kata": [
+      { "arab": "بِسْمِ", "transliterasi": "bismi", "arti": "Dengan nama" },
+      { "arab": "اللَّهِ", "transliterasi": "Allāhi", "arti": "Allah" },
+      { "arab": "الرَّحْمَٰنِ", "transliterasi": "ar-Raḥmāni", "arti": "Yang Maha Pengasih" },
+      { "arab": "الرَّحِيمِ", "transliterasi": "ar-Raḥīmi", "arti": "Yang Maha Penyayang" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 2,
+    "kata": [
+      { "arab": "الْحَمْدُ", "transliterasi": "al-ḥamdu", "arti": "Segala puji" },
+      { "arab": "لِلَّهِ", "transliterasi": "lillāhi", "arti": "bagi Allah" },
+      { "arab": "رَبِّ", "transliterasi": "rabbi", "arti": "Tuhan" },
+      { "arab": "الْعَالَمِينَ", "transliterasi": "al-ʿālamīn", "arti": "semesta alam" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 3,
+    "kata": [
+      { "arab": "الرَّحْمَٰنِ", "transliterasi": "ar-Raḥmāni", "arti": "Yang Maha Pengasih" },
+      { "arab": "الرَّحِيمِ", "transliterasi": "ar-Raḥīmi", "arti": "Yang Maha Penyayang" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 4,
+    "kata": [
+      { "arab": "مَالِكِ", "transliterasi": "māliki", "arti": "Pemilik" },
+      { "arab": "يَوْمِ", "transliterasi": "yawmi", "arti": "hari" },
+      { "arab": "الدِّينِ", "transliterasi": "ad-dīn", "arti": "pembalasan" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 5,
+    "kata": [
+      { "arab": "إِيَّاكَ", "transliterasi": "iyyāka", "arti": "Hanya kepada-Mu" },
+      { "arab": "نَعْبُدُ", "transliterasi": "naʿbudu", "arti": "kami menyembah" },
+      { "arab": "وَإِيَّاكَ", "transliterasi": "wa iyyāka", "arti": "dan hanya kepada-Mu" },
+      { "arab": "نَسْتَعِينُ", "transliterasi": "nastaʿīn", "arti": "kami mohon pertolongan" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 6,
+    "kata": [
+      { "arab": "اهْدِنَا", "transliterasi": "ihdinā", "arti": "Tunjukilah kami" },
+      { "arab": "الصِّرَاطَ", "transliterasi": "aṣ-ṣirāṭa", "arti": "jalan" },
+      { "arab": "الْمُسْتَقِيمَ", "transliterasi": "al-mustaqīm", "arti": "yang lurus" }
+    ]
+  },
+  {
+    "surah": 1,
+    "ayat": 7,
+    "kata": [
+      { "arab": "صِرَاطَ", "transliterasi": "ṣirāṭa", "arti": "Jalan" },
+      { "arab": "الَّذِينَ", "transliterasi": "alladhīna", "arti": "orang-orang yang" },
+      { "arab": "أَنْعَمْتَ", "transliterasi": "anʿamta", "arti": "Engkau beri nikmat" },
+      { "arab": "عَلَيْهِمْ", "transliterasi": "ʿalayhim", "arti": "kepada mereka" },
+      { "arab": "غَيْرِ", "transliterasi": "ghayri", "arti": "bukan" },
+      { "arab": "الْمَغْضُوبِ", "transliterasi": "al-maghḍūbi", "arti": "yang dimurkai" },
+      { "arab": "عَلَيْهِمْ", "transliterasi": "ʿalayhim", "arti": "kepada mereka" },
+      { "arab": "وَلَا", "transliterasi": "wa lā", "arti": "dan bukan" },
+      { "arab": "الضَّالِّينَ", "transliterasi": "aḍ-ḍāllīn", "arti": "yang sesat" }
+    ]
+  },
+  {
+    "surah": 112,
+    "ayat": 1,
+    "kata": [
+      { "arab": "قُلْ", "transliterasi": "qul", "arti": "Katakanlah" },
+      { "arab": "هُوَ", "transliterasi": "huwa", "arti": "Dialah" },
+      { "arab": "اللَّهُ", "transliterasi": "Allāhu", "arti": "Allah" },
+      { "arab": "أَحَدٌ", "transliterasi": "aḥad", "arti": "Yang Maha Esa" }
+    ]
+  },
+  {
+    "surah": 112,
+    "ayat": 2,
+    "kata": [
+      { "arab": "اللَّهُ", "transliterasi": "Allāhu", "arti": "Allah" },
+      { "arab": "الصَّمَدُ", "transliterasi": "aṣ-ṣamad", "arti": "tempat bergantung" }
+    ]
+  },
+  {
+    "surah": 112,
+    "ayat": 3,
+    "kata": [
+      { "arab": "لَمْ", "transliterasi": "lam", "arti": "Tidak" },
+      { "arab": "يَلِدْ", "transliterasi": "yalid", "arti": "beranak" },
+      { "arab": "وَلَمْ", "transliterasi": "wa lam", "arti": "dan tidak" },
+      { "arab": "يُولَدْ", "transliterasi": "yūlad", "arti": "diperanakkan" }
+    ]
+  },
+  {
+    "surah": 112,
+    "ayat": 4,
+    "kata": [
+      { "arab": "وَلَمْ", "transliterasi": "wa lam", "arti": "Dan tidak" },
+      { "arab": "يَكُنْ", "transliterasi": "yakun", "arti": "ada" },
+      { "arab": "لَهُ", "transliterasi": "lahu", "arti": "bagi-Nya" },
+      { "arab": "كُفُوًا", "transliterasi": "kufuwan", "arti": "yang setara" },
+      { "arab": "أَحَدٌ", "transliterasi": "aḥad", "arti": "seorang pun" }
+    ]
+  },
+  {
+    "surah": 113,
+    "ayat": 1,
+    "kata": [
+      { "arab": "قُلْ", "transliterasi": "qul", "arti": "Katakanlah" },
+      { "arab": "أَعُوذُ", "transliterasi": "aʿūdhu", "arti": "aku berlindung" },
+      { "arab": "بِرَبِّ", "transliterasi": "bi rabbi", "arti": "kepada Tuhan" },
+      { "arab": "الْفَلَقِ", "transliterasi": "al-falaq", "arti": "Subuh" }
+    ]
+  },
+  {
+    "surah": 114,
+    "ayat": 1,
+    "kata": [
+      { "arab": "قُلْ", "transliterasi": "qul", "arti": "Katakanlah" },
+      { "arab": "أَعُوذُ", "transliterasi": "aʿūdhu", "arti": "aku berlindung" },
+      { "arab": "بِرَبِّ", "transliterasi": "bi rabbi", "arti": "kepada Tuhan" },
+      { "arab": "النَّاسِ", "transliterasi": "an-nās", "arti": "manusia" }
+    ]
+  }
+]

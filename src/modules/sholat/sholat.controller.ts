@@ -15,7 +15,10 @@ export class SholatController {
   }
 
   @Get('kota')
-  @ApiOperation({ summary: 'List kota berdasarkan provinsi' })
+  @ApiOperation({
+    summary:
+      'List kota — kosongkan ?provinsi untuk dapat 518 kota dalam satu request',
+  })
   getKota(@Query() query: KotaQueryDto) {
     return this.sholatService.getKotaByProvinsi(query.provinsi);
   }

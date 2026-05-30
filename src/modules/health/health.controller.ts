@@ -2,9 +2,12 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { SkipApiKey } from '../../common/decorators/skip-api-key.decorator';
 
 @ApiTags('Health')
 @Controller()
+// Uptime monitors hit /health without credentials — keep it open.
+@SkipApiKey()
 export class HealthController {
   constructor(
     private readonly prisma: PrismaService,

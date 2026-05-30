@@ -41,3 +41,15 @@ prisma/*.db
 # temp
 /tmp
 *.tsbuildinfo
+
+# Runtime data — keep JSON seeds under /data, exclude caches/binaries/uploads
+/data/audio-cache/
+/data/audio-asmaul-husna/
+/data/uploads/
+/data/snapshots/
+
+# SSL certificates & private keys (NEVER commit)
+/ssl/
+
+# Quarantined incomplete admin dashboard work-in-progress
+/.quarantine-admin-incomplete/

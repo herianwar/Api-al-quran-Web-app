@@ -8,13 +8,29 @@ services:
       DATABASE_URL: postgresql://quranuser:quranpass@postgres:5432/quran_db?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      AUDIO_CACHE_DIR: /app/audio-cache
+      SNAPSHOT_DIR: /app/snapshots
     env_file:
       - .env
+    volumes:
+      # Persistent audio cache — survives container rebuild. Pre-warming the
+      # cache (POST /seed/start/audio) downloads ~2GB; we don't want to redo
+      # that on every redeploy.
+      - audio_cache:/app/audio-cache
+      # Snapshot dumps from /seed/snapshot/export. Mount to host for easy
+      # transfer to other environments.
+      - snapshots:/app/snapshots
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health > /dev/null || exit 1']
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     restart: unless-stopped
 
   postgres:
@@ -26,7 +42,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - '5432:5432'
+      - '55432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U quranuser -d quran_db']
       interval: 5s
@@ -39,7 +55,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - '6379:6379'
+      - '56379:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -47,6 +63,29 @@ services:
       retries: 10
     restart: unless-stopped
 
+  web:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_API_URL is baked into the client bundle at build time.
+        # In the same-compose setup the browser talks to the host-mapped
+        # port (localhost:3000), not the internal docker DNS name.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000/api/v1}
+    ports:
+      - '3001:3001'
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3001 > /dev/null || exit 1']
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
+  audio_cache:
+  snapshots:

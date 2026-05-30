@@ -9,9 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "recharts": "^3.8.1",
+    "socket.io-client": "^4.8.3",
     "swr": "^2.4.1"
   },
   "devDependencies": {
@@ -23,5 +26,13 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "//browserslist": "Next 16 defaults to Safari 16.4+; lowered to iOS/Safari 12 so older iPhones get transpiled JS (?., ??, ??=, private fields) + polyfills and actually load data.",
+  "browserslist": [
+    "safari >= 12",
+    "ios_saf >= 12",
+    "chrome >= 79",
+    "firefox >= 70",
+    "edge >= 79"
+  ]
 }

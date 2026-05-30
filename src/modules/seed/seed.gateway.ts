@@ -6,6 +6,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { PrismaService } from '../../prisma/prisma.service';
 
 export interface SeedProgressEvent {
   job: string;
@@ -42,8 +43,36 @@ export class SeedGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  handleConnection(client: Socket): void {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async handleConnection(client: Socket): Promise<void> {
     this.logger.debug(`Seed monitor connected: ${client.id}`);
+    // Push current state of every running job to the freshly connected client
+    // so a page refresh (or new tab) doesn't show 0% until the next tick fires.
+    try {
+      const running = await this.prisma.seedLog.findMany({
+        where: { status: 'running' },
+      });
+      for (const row of running) {
+        const percent =
+          row.totalItems > 0
+            ? Math.round((row.doneItems / row.totalItems) * 10000) / 100
+            : 0;
+        client.emit('seed:progress', {
+          job: row.jobName,
+          current: row.doneItems,
+          total: row.totalItems,
+          percent,
+          currentItem: '',
+          status: 'running',
+          startedAt: row.startedAt?.toISOString(),
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to push snapshot to ${client.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   handleDisconnect(client: Socket): void {

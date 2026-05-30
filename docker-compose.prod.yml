@@ -1,0 +1,62 @@
+# Production overrides — gabungkan dengan docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Perubahan vs dev:
+# - Tidak expose port DB/Redis ke host (cuma diakses oleh app container)
+# - Tambah Caddy untuk HTTPS otomatis via Let's Encrypt
+# - Resource limit ringan biar tidak crash VPS murah
+
+services:
+  # DB tidak perlu diakses dari luar di production
+  postgres:
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  redis:
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  app:
+    # NEXT_PUBLIC_API_URL akan dibaca oleh web container saat build, jadi
+    # docker compose build di VPS perlu env ini di-set juga.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  web:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Caddy untuk HTTPS otomatis + reverse proxy.
+  # Ganti `Caddyfile` dengan domain Anda sebelum up.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:
