@@ -36,4 +36,14 @@ export class BroadcastDto {
   @IsString()
   @MaxLength(300)
   deeplink?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://rumahquran.id/uploads/artikel/cover.jpg',
+    description: 'Absolute image URL — big-picture (Android) / attachment (iOS)',
+  })
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  imageUrl?: string;
 }
