@@ -137,4 +137,20 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     await this.set(key, data, ttlSeconds);
     return { data, cached: false };
   }
+
+  /**
+   * Atomic fixed-window counter: INCR the key, set EXPIRE on the first hit.
+   * Returns the new count, or 0 if Redis is down (caller should fail open).
+   */
+  async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+    if (!this.healthy) return 0;
+    try {
+      const n = await this.client.incr(key);
+      if (n === 1) await this.client.expire(key, ttlSeconds);
+      return n;
+    } catch (error) {
+      this.logger.warn(`Redis INCR ${key} failed: ${(error as Error).message}`);
+      return 0;
+    }
+  }
 }

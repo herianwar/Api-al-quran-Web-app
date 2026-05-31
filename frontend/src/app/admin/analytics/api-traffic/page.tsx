@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  Download,
   Gauge,
   Layers,
   Smartphone,
@@ -23,7 +24,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetcher } from "@/lib/api";
+import { fetcher, apiFetchRaw } from "@/lib/api";
 import { ErrorBox, Spinner } from "@/components/Spinner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { RefreshButton } from "@/components/admin/RefreshButton";
@@ -40,7 +41,9 @@ interface ApiUsage {
     avgLatencyMs: number;
     p95LatencyMs: number;
     activeApps: number;
+    trend: { requests: number; errorRate: number; latency: number };
   };
+  alerts: { type: string; appName: string; detail: string }[];
   daily: { date: string; requests: number; errors: number }[];
   apps: {
     apiKeyId: string;
@@ -49,6 +52,8 @@ interface ApiUsage {
     errors: number;
     errorRatePct: number;
     avgLatencyMs: number;
+    rateLimit: number;
+    peakRpm: number;
   }[];
   platforms: { platform: string; requests: number }[];
   statusClasses: { klass: string; requests: number }[];
@@ -101,6 +106,16 @@ function fmt(n: number): string {
   return n.toLocaleString("id-ID");
 }
 
+function signed(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}%`;
+}
+
+const ALERT_LABEL: Record<string, string> = {
+  stale: "App tidak aktif",
+  error_spike: "Lonjakan error",
+  rate_limit: "Lewat rate limit",
+};
+
 export default function AdminApiTrafficPage() {
   const [range, setRange] = useState<number>(7);
   const [appId, setAppId] = useState<string>("");
@@ -117,6 +132,21 @@ export default function AdminApiTrafficPage() {
     `/admin/analytics/api?range=${range}`,
     fetcher,
   );
+
+  async function exportCsv() {
+    try {
+      const res = await apiFetchRaw(`/admin/analytics/api/export?${qs}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `api-usage-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      window.alert(`Export gagal: ${(e as Error).message}`);
+    }
+  }
 
   if (isLoading && !data) return <Spinner label="Memuat API analytics…" />;
   if (error) return <ErrorBox message={(error as Error).message} />;
@@ -163,10 +193,38 @@ export default function AdminApiTrafficPage() {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={() => void exportCsv()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-emerald-500 hover:text-emerald-700 transition shadow-sm"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">CSV</span>
+            </button>
             <RefreshButton onRefresh={() => void mutate()} />
           </div>
         }
       />
+
+      {data.alerts.length > 0 && (
+        <div className="card p-4 my-4 border-l-4 border-amber-400 bg-amber-50">
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-2 inline-flex items-center gap-1.5">
+            <AlertTriangle size={14} /> Peringatan ({data.alerts.length})
+          </p>
+          <ul className="space-y-1 text-sm text-amber-900">
+            {data.alerts.map((al, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 whitespace-nowrap mt-0.5">
+                  {ALERT_LABEL[al.type] ?? al.type}
+                </span>
+                <span>
+                  <span className="font-semibold">{al.appName}</span> — {al.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Headline stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 my-5">
@@ -175,21 +233,22 @@ export default function AdminApiTrafficPage() {
           tone="emerald"
           label="Total request"
           value={fmt(data.headline.totalRange)}
-          hint={`${RANGES.find((r) => r.value === range)?.label} · hari ini ${fmt(data.headline.totalToday)}`}
+          hint={`hari ini ${fmt(data.headline.totalToday)} · ${signed(data.headline.trend.requests)} vs periode lalu`}
+          trend={data.headline.trend.requests}
         />
         <StatCard
           icon={AlertTriangle}
           tone={data.headline.errorRatePct >= 5 ? "rose" : "amber"}
           label="Error rate"
           value={`${data.headline.errorRatePct}%`}
-          hint={`${fmt(data.headline.errorRange)} error (4xx/5xx)`}
+          hint={`${fmt(data.headline.errorRange)} error · ${signed(data.headline.trend.errorRate)} vs lalu`}
         />
         <StatCard
           icon={Timer}
           tone="indigo"
           label="Latency rata-rata"
           value={`${fmt(data.headline.avgLatencyMs)} ms`}
-          hint={`p95 ${fmt(data.headline.p95LatencyMs)} ms (7 hari)`}
+          hint={`p95 ${fmt(data.headline.p95LatencyMs)} ms · ${signed(data.headline.trend.latency)} vs lalu`}
         />
         <StatCard
           icon={Smartphone}
@@ -282,7 +341,20 @@ export default function AdminApiTrafficPage() {
                       </button>
                       <span className="tabular-nums whitespace-nowrap text-slate-500">
                         {fmt(a.requests)} req · {a.errorRatePct}% err ·{" "}
-                        {fmt(a.avgLatencyMs)} ms
+                        {fmt(a.avgLatencyMs)} ms ·{" "}
+                        {a.rateLimit > 0 ? (
+                          <span
+                            className={
+                              a.peakRpm > a.rateLimit
+                                ? "text-rose-600 font-semibold"
+                                : ""
+                            }
+                          >
+                            {a.peakRpm}/{a.rateLimit} rpm
+                          </span>
+                        ) : (
+                          <span title="tanpa limit per-key">∞ rpm</span>
+                        )}
                       </span>
                     </div>
                     <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">

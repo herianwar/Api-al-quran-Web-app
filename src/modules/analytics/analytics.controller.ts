@@ -5,6 +5,8 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -13,7 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -87,5 +89,21 @@ export class AnalyticsAdminController {
   apiUsage(@Query() query: ApiUsageQueryDto) {
     const days = query.range ? parseInt(query.range, 10) : 7;
     return this.analytics.getApiUsage(days, query.appId);
+  }
+
+  @Get('api/export')
+  @ApiOperation({ summary: 'Export API usage per hari/app ke CSV' })
+  async apiExport(
+    @Query() query: ApiUsageQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const days = query.range ? parseInt(query.range, 10) : 7;
+    const csv = await this.analytics.exportApiUsageCsv(days, query.appId);
+    const filename = `api-usage-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    return new StreamableFile(Buffer.from(csv, 'utf-8'));
   }
 }

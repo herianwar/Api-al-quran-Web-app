@@ -352,96 +352,46 @@ export class AnalyticsService {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
     const sinceDate = new Date(todayStart.getTime() - (days - 1) * 86_400_000);
+    // Pull the previous equal-length window too, for period-over-period trend.
+    const prevSince = new Date(
+      todayStart.getTime() - (2 * days - 1) * 86_400_000,
+    );
     const rawSince = new Date(
       todayStart.getTime() - (Math.min(days, RETENTION) - 1) * 86_400_000,
     );
     const keyWhere = appId ? { apiKeyId: appId } : {};
 
-    interface Bucket {
-      dateKey: string;
-      apiKeyId: string;
-      appName: string;
-      platform: string;
-      requests: number;
-      errors: number;
-      sumLatencyMs: number;
-    }
-    type RawBucketRow = {
-      d: Date;
-      apiKeyId: string;
-      appName: string;
-      platform: string;
-      requests: number;
-      errors: number;
-      sumLatencyMs: bigint;
-    };
-
-    // The raw log holds the full retention window (~7d), so read recent days
-    // straight from it — this covers today AND any completed-but-not-yet
-    // rolled-up day (e.g. yesterday before the nightly rollup). Only days
-    // OLDER than the raw window come from the permanent aggregate, so there's
-    // neither a gap nor double counting (rawSince === the raw cutoff).
-    const pastDaily =
-      rawSince.getTime() > sinceDate.getTime()
-        ? await this.prisma.apiUsageDaily.findMany({
-            where: { date: { gte: sinceDate, lt: rawSince }, ...keyWhere },
-          })
-        : [];
-
-    // Recent days [rawSince, now] aggregated live from the raw log, grouped by
-    // day + app + platform (date_trunc isn't expressible via Prisma groupBy).
-    const rawRows = appId
-      ? await this.prisma.$queryRaw<RawBucketRow[]>`
-          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
-                 max("appName") AS "appName", "platform",
-                 count(*)::int AS requests,
-                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
-                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
-          FROM api_request_logs
-          WHERE "createdAt" >= ${rawSince} AND "apiKeyId" = ${appId}
-          GROUP BY 1, 2, 4`
-      : await this.prisma.$queryRaw<RawBucketRow[]>`
-          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
-                 max("appName") AS "appName", "platform",
-                 count(*)::int AS requests,
-                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
-                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
-          FROM api_request_logs
-          WHERE "createdAt" >= ${rawSince}
-          GROUP BY 1, 2, 4`;
-
-    const buckets: Bucket[] = [
-      ...pastDaily.map((r) => ({
-        dateKey: r.date.toISOString().slice(0, 10),
-        apiKeyId: r.apiKeyId,
-        appName: r.appName,
-        platform: r.platform,
-        requests: r.requests,
-        errors: r.errors,
-        sumLatencyMs: Number(r.sumLatencyMs),
-      })),
-      ...rawRows.map((r) => ({
-        dateKey: new Date(r.d).toISOString().slice(0, 10),
-        apiKeyId: r.apiKeyId,
-        appName: r.appName,
-        platform: r.platform,
-        requests: Number(r.requests),
-        errors: Number(r.errors),
-        sumLatencyMs: Number(r.sumLatencyMs),
-      })),
-    ];
+    // Current + previous window in one fetch; split by date.
+    const allBuckets = await this.fetchUsageBuckets(prevSince, rawSince, appId);
+    const sinceKey = sinceDate.toISOString().slice(0, 10);
+    const buckets = allBuckets.filter((b) => b.dateKey >= sinceKey);
+    const prevBuckets = allBuckets.filter((b) => b.dateKey < sinceKey);
     const todayKey = todayStart.toISOString().slice(0, 10);
 
-    // Headline.
+    // Headline (current window).
     const totalRange = buckets.reduce((s, b) => s + b.requests, 0);
     const errorRange = buckets.reduce((s, b) => s + b.errors, 0);
     const sumLatency = buckets.reduce((s, b) => s + b.sumLatencyMs, 0);
+    const avgLatencyMs = totalRange ? Math.round(sumLatency / totalRange) : 0;
     const totalToday = buckets
       .filter((b) => b.dateKey === todayKey)
       .reduce((s, b) => s + b.requests, 0);
     const activeApps = new Set(buckets.map((b) => b.apiKeyId)).size;
 
-    // Daily series (zero-filled across the whole window).
+    // Previous-window totals → trend (% change vs the prior equal period).
+    const prevReq = prevBuckets.reduce((s, b) => s + b.requests, 0);
+    const prevErr = prevBuckets.reduce((s, b) => s + b.errors, 0);
+    const prevLatSum = prevBuckets.reduce((s, b) => s + b.sumLatencyMs, 0);
+    const trend = {
+      requests: pctChange(totalRange, prevReq),
+      errorRate: pctChange(pct(errorRange, totalRange), pct(prevErr, prevReq)),
+      latency: pctChange(
+        avgLatencyMs,
+        prevReq ? Math.round(prevLatSum / prevReq) : 0,
+      ),
+    };
+
+    // Daily series (current window, zero-filled).
     const dailyMap = new Map<string, { requests: number; errors: number }>();
     for (const b of buckets) {
       const cur = dailyMap.get(b.dateKey) ?? { requests: 0, errors: 0 };
@@ -476,6 +426,38 @@ export class AnalyticsService {
       cur.sumLatencyMs += b.sumLatencyMs;
       appMap.set(b.apiKeyId, cur);
     }
+
+    // Per-key metadata (rate limit + last-used) and peak req/min in the raw
+    // window — used to show "usage vs limit" and to raise health alerts.
+    const [keyRows, peakRows] = await Promise.all([
+      this.prisma.apiKey.findMany({
+        select: {
+          id: true,
+          name: true,
+          rateLimit: true,
+          enabled: true,
+          lastUsedAt: true,
+        },
+      }),
+      appId
+        ? this.prisma.$queryRaw<{ apiKeyId: string; peak: number }[]>`
+            SELECT "apiKeyId", max(c)::int AS peak FROM (
+              SELECT "apiKeyId", date_trunc('minute', "createdAt") m, count(*) c
+              FROM api_request_logs
+              WHERE "createdAt" >= ${rawSince} AND "apiKeyId" = ${appId}
+              GROUP BY 1, 2
+            ) s GROUP BY 1`
+        : this.prisma.$queryRaw<{ apiKeyId: string; peak: number }[]>`
+            SELECT "apiKeyId", max(c)::int AS peak FROM (
+              SELECT "apiKeyId", date_trunc('minute', "createdAt") m, count(*) c
+              FROM api_request_logs
+              WHERE "createdAt" >= ${rawSince}
+              GROUP BY 1, 2
+            ) s GROUP BY 1`,
+    ]);
+    const keyById = new Map(keyRows.map((k) => [k.id, k]));
+    const peakById = new Map(peakRows.map((r) => [r.apiKeyId, Number(r.peak)]));
+
     const apps = [...appMap.entries()]
       .map(([apiKeyId, v]) => ({
         apiKeyId,
@@ -484,6 +466,8 @@ export class AnalyticsService {
         errors: v.errors,
         errorRatePct: pct(v.errors, v.requests),
         avgLatencyMs: v.requests ? Math.round(v.sumLatencyMs / v.requests) : 0,
+        rateLimit: keyById.get(apiKeyId)?.rateLimit ?? 0,
+        peakRpm: peakById.get(apiKeyId) ?? 0,
       }))
       .sort((a, b) => b.requests - a.requests);
 
@@ -560,6 +544,38 @@ export class AnalyticsService {
       };
     });
 
+    // Health alerts surfaced as a dashboard banner.
+    const alerts: { type: string; appName: string; detail: string }[] = [];
+    const staleCutoff = Date.now() - 24 * 3600 * 1000;
+    for (const k of keyRows) {
+      if (k.enabled && k.lastUsedAt && k.lastUsedAt.getTime() < staleCutoff) {
+        alerts.push({
+          type: 'stale',
+          appName: k.name,
+          detail: `tidak ada request > 24 jam (terakhir ${k.lastUsedAt
+            .toISOString()
+            .slice(0, 16)
+            .replace('T', ' ')} UTC)`,
+        });
+      }
+    }
+    for (const a of apps) {
+      if (a.requests >= 20 && a.errorRatePct >= 30) {
+        alerts.push({
+          type: 'error_spike',
+          appName: a.appName,
+          detail: `error rate ${a.errorRatePct}% (${a.errors}/${a.requests})`,
+        });
+      }
+      if (a.rateLimit > 0 && a.peakRpm > a.rateLimit) {
+        alerts.push({
+          type: 'rate_limit',
+          appName: a.appName,
+          detail: `puncak ${a.peakRpm} req/menit melebihi limit ${a.rateLimit}`,
+        });
+      }
+    }
+
     return ok(
       {
         rangeDays: days,
@@ -569,10 +585,12 @@ export class AnalyticsService {
           totalToday,
           errorRange,
           errorRatePct: pct(errorRange, totalRange),
-          avgLatencyMs: totalRange ? Math.round(sumLatency / totalRange) : 0,
+          avgLatencyMs,
           p95LatencyMs: p95,
           activeApps,
+          trend,
         },
+        alerts,
         daily,
         apps,
         platforms,
@@ -588,6 +606,102 @@ export class AnalyticsService {
       },
       'API usage analytics',
     );
+  }
+
+  /**
+   * Fetch usage buckets for [fetchSince, now]: the permanent aggregate for days
+   * older than the raw retention window, the raw log for recent days. No gap
+   * and no double counting (rawSince is the boundary).
+   */
+  private async fetchUsageBuckets(
+    fetchSince: Date,
+    rawSince: Date,
+    appId?: string,
+  ): Promise<UsageBucket[]> {
+    const keyWhere = appId ? { apiKeyId: appId } : {};
+    const pastDaily =
+      rawSince.getTime() > fetchSince.getTime()
+        ? await this.prisma.apiUsageDaily.findMany({
+            where: { date: { gte: fetchSince, lt: rawSince }, ...keyWhere },
+          })
+        : [];
+    const rawRows = appId
+      ? await this.prisma.$queryRaw<RawBucketRow[]>`
+          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
+                 max("appName") AS "appName", "platform",
+                 count(*)::int AS requests,
+                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
+                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
+          FROM api_request_logs
+          WHERE "createdAt" >= ${rawSince} AND "apiKeyId" = ${appId}
+          GROUP BY 1, 2, 4`
+      : await this.prisma.$queryRaw<RawBucketRow[]>`
+          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
+                 max("appName") AS "appName", "platform",
+                 count(*)::int AS requests,
+                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
+                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
+          FROM api_request_logs
+          WHERE "createdAt" >= ${rawSince}
+          GROUP BY 1, 2, 4`;
+    return [
+      ...pastDaily.map((r) => ({
+        dateKey: r.date.toISOString().slice(0, 10),
+        apiKeyId: r.apiKeyId,
+        appName: r.appName,
+        platform: r.platform,
+        requests: r.requests,
+        errors: r.errors,
+        sumLatencyMs: Number(r.sumLatencyMs),
+      })),
+      ...rawRows.map((r) => ({
+        dateKey: new Date(r.d).toISOString().slice(0, 10),
+        apiKeyId: r.apiKeyId,
+        appName: r.appName,
+        platform: r.platform,
+        requests: Number(r.requests),
+        errors: Number(r.errors),
+        sumLatencyMs: Number(r.sumLatencyMs),
+      })),
+    ];
+  }
+
+  /** CSV of per-day-per-app usage for the range (for the export button). */
+  async exportApiUsageCsv(rangeDays = 7, appId?: string): Promise<string> {
+    const RETENTION = 7;
+    const days = [1, 7, 30, 90].includes(rangeDays) ? rangeDays : 7;
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const sinceDate = new Date(todayStart.getTime() - (days - 1) * 86_400_000);
+    const rawSince = new Date(
+      todayStart.getTime() - (Math.min(days, RETENTION) - 1) * 86_400_000,
+    );
+    const buckets = (
+      await this.fetchUsageBuckets(sinceDate, rawSince, appId)
+    ).sort(
+      (a, b) =>
+        (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : 0) ||
+        b.requests - a.requests,
+    );
+    const header = [
+      'Tanggal',
+      'App',
+      'Platform',
+      'Requests',
+      'Errors',
+      'Error %',
+      'Avg latency (ms)',
+    ];
+    const rows = buckets.map((b) => [
+      b.dateKey,
+      b.appName,
+      b.platform,
+      b.requests,
+      b.errors,
+      pct(b.errors, b.requests),
+      b.requests ? Math.round(b.sumLatencyMs / b.requests) : 0,
+    ]);
+    return toCsv([header, ...rows]);
   }
 
   /** p95 latency (ms) over the raw window. Returns 0 when there's no data. */
@@ -681,4 +795,42 @@ function aggregateStatusClasses(
   return order
     .filter((k) => m.has(k))
     .map((klass) => ({ klass, requests: m.get(klass)! }));
+}
+
+/** Normalised per-day-per-app-per-platform usage row. */
+interface UsageBucket {
+  dateKey: string;
+  apiKeyId: string;
+  appName: string;
+  platform: string;
+  requests: number;
+  errors: number;
+  sumLatencyMs: number;
+}
+
+/** Shape of a raw-log day bucket returned by the $queryRaw aggregation. */
+type RawBucketRow = {
+  d: Date;
+  apiKeyId: string;
+  appName: string;
+  platform: string;
+  requests: number;
+  errors: number;
+  sumLatencyMs: bigint;
+};
+
+/** Percentage change from prev → cur, 1 decimal. New-from-zero reads as +100%. */
+function pctChange(cur: number, prev: number): number {
+  if (!prev) return cur > 0 ? 100 : 0;
+  return Math.round(((cur - prev) / prev) * 1000) / 10;
+}
+
+/** Serialize rows to CSV with escaping + UTF-8 BOM so Excel opens it cleanly. */
+function toCsv(rows: (string | number)[][]): string {
+  const escape = (val: string | number): string => {
+    const s = String(val ?? '');
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const body = rows.map((r) => r.map(escape).join(',')).join('\r\n');
+  return `﻿${body}`;
 }
