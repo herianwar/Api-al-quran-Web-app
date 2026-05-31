@@ -58,19 +58,26 @@ export function RichTextEditor({
   );
   const imgElRef = useRef<HTMLImageElement | null>(null);
 
-  // Seed / re-seed innerHTML from `value` only when it diverges and the editor
-  // isn't being typed into (prevents caret jumps mid-edit).
+  // Keep the latest onChange without making effects depend on its identity
+  // (the parent passes a fresh inline arrow each render).
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // Seed / re-seed innerHTML from `value` only when the editor isn't being
+  // typed into (prevents caret jumps mid-edit). Legacy `<div>`-wrapped content
+  // is normalized to `<p>` so blocks are consistent and the cleaned markup is
+  // propagated back so the next save drops the old `<div>` soup.
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
-    if (!focused && el.innerHTML !== value) {
-      el.innerHTML = value || "";
-    }
+    if (!el || focused) return;
+    const normalized = normalizeHtml(value);
+    if (el.innerHTML !== normalized) el.innerHTML = normalized;
+    if (normalized !== value) onChangeRef.current(normalized);
   }, [value, focused]);
 
   const emit = useCallback(() => {
-    if (ref.current) onChange(ref.current.innerHTML);
-  }, [onChange]);
+    if (ref.current) onChangeRef.current(ref.current.innerHTML);
+  }, []);
 
   const syncBlock = useCallback(() => {
     try {
@@ -94,6 +101,34 @@ export function RichTextEditor({
   const applyBlock = useCallback(
     (tag: string) => exec("formatBlock", `<${tag}>`),
     [exec],
+  );
+
+  // Enter inside a heading / quote should start a NORMAL paragraph on the next
+  // line instead of inheriting the heading (the classic "everything I type
+  // turns into a sub-judul" bug). We let the browser split the block, then
+  // convert the freshly-created line to <p>.
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      const sel = window.getSelection();
+      let node: Node | null = sel?.focusNode ?? null;
+      while (node && node !== ref.current) {
+        if (node.nodeType === 1) {
+          const tag = (node as Element).tagName;
+          if (/^H[1-6]$/.test(tag) || tag === "BLOCKQUOTE") {
+            setTimeout(() => {
+              document.execCommand("formatBlock", false, "<p>");
+              emit();
+              syncBlock();
+            }, 0);
+            return;
+          }
+          if (tag === "LI") return; // lists handle Enter themselves
+        }
+        node = node.parentNode;
+      }
+    },
+    [emit, syncBlock],
   );
 
   const addLink = useCallback(() => {
@@ -328,12 +363,22 @@ export function RichTextEditor({
           onInput={emit}
           onPaste={onPaste}
           onClick={onEditorClick}
+          onKeyDown={onKeyDown}
           onKeyUp={syncBlock}
           onBlur={() => {
             setFocused(false);
             emit();
           }}
-          onFocus={() => setFocused(true)}
+          onFocus={() => {
+            setFocused(true);
+            // Make Enter / typing produce <p> blocks (not Chrome's <div>),
+            // so headings don't bleed into following lines.
+            try {
+              document.execCommand("defaultParagraphSeparator", false, "p");
+            } catch {
+              /* unsupported browser — harmless */
+            }
+          }}
           data-placeholder={placeholder}
           className="rte-surface prose-article min-h-[360px] max-h-[70vh] overflow-y-auto px-4 py-4 text-[15px] leading-relaxed text-slate-800 outline-none"
         />
@@ -442,6 +487,25 @@ export function RichTextEditor({
       `}</style>
     </div>
   );
+}
+
+/**
+ * Normalize stored body HTML for editing: rewrite legacy `<div>` wrappers
+ * (Chrome's old contentEditable default) to `<p>` so every block is a real
+ * paragraph the toolbar + styles understand. Empty/whitespace content collapses
+ * to "" (lets the placeholder show). SSR-safe: returns input unchanged when
+ * there's no DOM.
+ */
+function normalizeHtml(html: string): string {
+  if (!html || !html.trim()) return "";
+  if (typeof window === "undefined") return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll("div").forEach((div) => {
+    const p = document.createElement("p");
+    p.innerHTML = div.innerHTML;
+    div.replaceWith(p);
+  });
+  return doc.body.innerHTML;
 }
 
 /** Prepend the API origin to a relative /uploads path. */
