@@ -523,6 +523,50 @@ export class AnalyticsService {
         this.apiLatencyP95(rawSince, appId),
       ]);
 
+    // Active END-USERS (authenticated) hitting the API + top users, from the
+    // raw log (≤7d) — API logs only carry a userId for authenticated requests.
+    const [activeUserRows, topUserRows] = await Promise.all([
+      this.prisma.apiRequestLog.findMany({
+        where: {
+          createdAt: { gte: rawSince },
+          userId: { not: null },
+          ...keyWhere,
+        },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+      this.prisma.apiRequestLog.groupBy({
+        by: ['userId'],
+        where: {
+          createdAt: { gte: rawSince },
+          userId: { not: null },
+          ...keyWhere,
+        },
+        _count: { _all: true },
+        orderBy: { _count: { userId: 'desc' } },
+        take: 10,
+      }),
+    ]);
+    const activeUsers = activeUserRows.length;
+    const topUserIds = topUserRows
+      .map((r) => r.userId)
+      .filter((id): id is string => !!id);
+    const userRows = topUserIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: topUserIds } },
+          select: { id: true, nama: true, email: true },
+        })
+      : [];
+    const userById = new Map(userRows.map((u) => [u.id, u]));
+    const topUsers = topUserRows
+      .filter((r) => r.userId)
+      .map((r) => ({
+        userId: r.userId as string,
+        name: userById.get(r.userId as string)?.nama ?? '(tidak dikenal)',
+        email: userById.get(r.userId as string)?.email ?? '',
+        requests: r._count._all,
+      }));
+
     const statusClasses = aggregateStatusClasses(
       statusRows.map((r) => ({
         statusCode: r.statusCode,
@@ -588,9 +632,11 @@ export class AnalyticsService {
           avgLatencyMs,
           p95LatencyMs: p95,
           activeApps,
+          activeUsers,
           trend,
         },
         alerts,
+        topUsers,
         daily,
         apps,
         platforms,

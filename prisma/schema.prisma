@@ -1081,6 +1081,9 @@ model ApiRequestLog {
   id         BigInt   @id @default(autoincrement())
   apiKeyId   String
   appName    String
+  /// Authenticated end-user (from JWT) when the request carried one; null for
+  /// anonymous/app-only calls. Used for "active users" on the API dashboard.
+  userId     String?
   method     String
   endpoint   String
   statusCode Int
@@ -1093,6 +1096,7 @@ model ApiRequestLog {
   @@index([createdAt])
   @@index([apiKeyId])
   @@index([endpoint])
+  @@index([userId])
   @@map("api_request_logs")
 }
 

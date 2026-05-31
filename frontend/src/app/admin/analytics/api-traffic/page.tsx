@@ -8,6 +8,7 @@ import {
   Layers,
   Smartphone,
   Timer,
+  Users,
   Zap,
 } from "lucide-react";
 import { useState } from "react";
@@ -41,9 +42,16 @@ interface ApiUsage {
     avgLatencyMs: number;
     p95LatencyMs: number;
     activeApps: number;
+    activeUsers: number;
     trend: { requests: number; errorRate: number; latency: number };
   };
   alerts: { type: string; appName: string; detail: string }[];
+  topUsers: {
+    userId: string;
+    name: string;
+    email: string;
+    requests: number;
+  }[];
   daily: { date: string; requests: number; errors: number }[];
   apps: {
     apiKeyId: string;
@@ -562,6 +570,54 @@ export default function AdminApiTrafficPage() {
             </ul>
           )}
         </div>
+      </div>
+      {/* Active end-users (login) on the API */}
+      <div className="card p-5 mt-6">
+        <h2 className="font-semibold text-slate-900 mb-1 inline-flex items-center gap-2">
+          <Users size={16} /> User aktif (login){" "}
+          <span className="text-emerald-700">
+            {fmt(data.headline.activeUsers)}
+          </span>
+        </h2>
+        <p className="text-xs text-slate-500 mb-3">
+          User terautentikasi (login) yang akses API — maks {data.retentionDays}{" "}
+          hari terakhir.
+        </p>
+        {data.topUsers.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            Belum ada request dari user yang login via API.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {data.topUsers.map((u) => {
+              const max = data.topUsers[0]?.requests || 1;
+              const pct = (u.requests / max) * 100;
+              return (
+                <li key={u.userId}>
+                  <div className="flex items-center justify-between text-xs mb-0.5 gap-2">
+                    <span className="truncate">
+                      <span className="font-semibold text-slate-700">
+                        {u.name}
+                      </span>
+                      {u.email && (
+                        <span className="text-slate-400"> · {u.email}</span>
+                      )}
+                    </span>
+                    <span className="tabular-nums whitespace-nowrap font-semibold">
+                      {fmt(u.requests)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full bg-sky-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </>
   );

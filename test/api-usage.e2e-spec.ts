@@ -106,6 +106,13 @@ describe('API usage analytics (e2e)', () => {
     const fxx = d.statusClasses.find((s) => s.klass === '5xx');
     expect(fxx?.requests).toBe(1);
     expect(d.recentErrors.length).toBe(1);
+    // Active end-users fields present (no userId seeded → 0 / empty).
+    expect(typeof (d.headline as { activeUsers?: number }).activeUsers).toBe(
+      'number',
+    );
+    expect(
+      Array.isArray((d as { topUsers?: unknown[] }).topUsers),
+    ).toBe(true);
   });
 
   it('filters by appId', async () => {

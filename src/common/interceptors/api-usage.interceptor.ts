@@ -62,6 +62,9 @@ export class ApiUsageInterceptor implements NestInterceptor {
     const endpoint = normalizeEndpoint(req);
     const appName = apiKey.name.slice(0, 120);
     const apiKeyId = apiKey.id;
+    // Authenticated end-user, if the route ran a JWT guard (req.user.userId).
+    const userId =
+      (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
 
     // Capture once the response is fully flushed: statusCode is then accurate
     // for both success and error paths, and latency includes serialization.
@@ -80,6 +83,7 @@ export class ApiUsageInterceptor implements NestInterceptor {
             platform,
             os,
             device,
+            userId,
           },
         })
         .catch((err: Error) =>
