@@ -25,6 +25,9 @@ interface UsersAna {
   signupsLast30: { day: string; count: number }[];
   roles: { role: string; count: number }[];
   activeWithDevice: number;
+  dau: number;
+  wau: number;
+  mau: number;
   latestSignups: {
     id: string;
     email: string;
@@ -89,6 +92,35 @@ export default function UsersAnalyticsPage() {
           tone="sky"
           hint="ada device terdaftar"
         />
+      </div>
+
+      <div>
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+          User aktif (baca / bookmark / hafalan / catatan)
+        </h2>
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard
+            label="DAU"
+            value={data.dau}
+            icon={Users}
+            tone="emerald"
+            hint="aktif hari ini"
+          />
+          <StatCard
+            label="WAU"
+            value={data.wau}
+            icon={Users}
+            tone="indigo"
+            hint="7 hari terakhir"
+          />
+          <StatCard
+            label="MAU"
+            value={data.mau}
+            icon={Users}
+            tone="sky"
+            hint="30 hari terakhir"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">

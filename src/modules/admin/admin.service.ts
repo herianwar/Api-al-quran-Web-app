@@ -347,6 +347,23 @@ export class AdminService implements OnApplicationBootstrap {
         }),
       ]);
 
+    // DAU / WAU / MAU — distinct end-users with ANY activity (reading session,
+    // bookmark, hafalan, note) in the last 1 / 7 / 30 days.
+    const [activeWindows] = await this.prisma.$queryRaw<
+      Array<{ dau: bigint; wau: bigint; mau: bigint }>
+    >`
+      SELECT
+        COUNT(DISTINCT uid) FILTER (WHERE ts >= NOW() - INTERVAL '1 day') AS dau,
+        COUNT(DISTINCT uid) FILTER (WHERE ts >= NOW() - INTERVAL '7 days') AS wau,
+        COUNT(DISTINCT uid) AS mau
+      FROM (
+        SELECT "userId" uid, "createdAt" ts FROM bookmarks WHERE "createdAt" >= NOW() - INTERVAL '30 days'
+        UNION ALL SELECT "userId", "createdAt" FROM hafalan WHERE "createdAt" >= NOW() - INTERVAL '30 days'
+        UNION ALL SELECT "userId", "createdAt" FROM reading_sessions WHERE "createdAt" >= NOW() - INTERVAL '30 days'
+        UNION ALL SELECT "userId", "createdAt" FROM ayat_notes WHERE "createdAt" >= NOW() - INTERVAL '30 days'
+      ) a
+    `;
+
     return ok(
       {
         signupsLast30: signupsLast30.map((r) => ({
@@ -358,6 +375,9 @@ export class AdminService implements OnApplicationBootstrap {
           count: r._count._all,
         })),
         activeWithDevice: Number(activeWithDevice[0]?.count ?? 0),
+        dau: Number(activeWindows?.dau ?? 0),
+        wau: Number(activeWindows?.wau ?? 0),
+        mau: Number(activeWindows?.mau ?? 0),
         latestSignups,
       },
       'Users analytics',
