@@ -979,6 +979,102 @@ model Tahlil {
   @@map("tahlil")
 }
 
+// ─── ADZAN (audio panggilan shalat, self-hosted) ─────
+// Koleksi rekaman adzan yang di-host sendiri di data/audio-adzan/<file>.
+// API hanya mengembalikan URL proxy lokal (/adzan/:id/audio), tidak pernah
+// membocorkan origin CDN-nya.
+
+model Adzan {
+  id        Int      @id @default(autoincrement())
+  /// Slug stabil ("makkah", "madinah", "subuh", dst) untuk URL & lookup cepat.
+  slug      String   @unique
+  /// Judul tampilan, mis. "Adzan Masjidil Haram (Makkah)".
+  judul     String
+  /// Nama muadzin bila diketahui (boleh null).
+  muadzin   String?
+  /// Lokasi/masjid bila relevan (boleh null).
+  lokasi    String?
+  /// Jenis adzan: "subuh" (pakai tatswib) atau "umum" (4 waktu lainnya).
+  jenis     String   @default("umum")
+  /// Nama file lokal di data/audio-adzan, mis. "az1.mp3".
+  file      String
+  /// Durasi audio dalam detik (perkiraan), untuk UI.
+  durasi    Int?
+  /// Ukuran file (byte), diisi saat seed agar UI bisa tampilkan size.
+  ukuran    Int?
+  /// URL sumber asli (untuk atribusi); tidak pernah diekspos ke publik.
+  sumberUrl String?  @db.Text
+  /// Urutan tampilan.
+  urutan    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([urutan])
+  @@index([jenis])
+  @@map("adzan")
+}
+
+// ─── ARTIKEL / PORTAL ─────────────────────────────────
+// Portal artikel profesional: kategori + artikel rich-text (HTML body),
+// cover image, tag, status draft/published, dan penghitung view. Konten
+// HTML dibuat lewat editor WYSIWYG di admin dan disanitasi server-side.
+
+model ArtikelKategori {
+  id        Int       @id @default(autoincrement())
+  /// Slug URL-friendly, mis. "kajian", "kisah-inspiratif".
+  slug      String    @unique
+  nama      String
+  deskripsi String?   @db.Text
+  /// Urutan tampilan (kecil = duluan).
+  urutan    Int       @default(100)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  artikel Artikel[]
+
+  @@index([urutan])
+  @@map("artikel_kategori")
+}
+
+model Artikel {
+  id          Int      @id @default(autoincrement())
+  /// Slug stabil untuk URL /artikel/{slug}.
+  slug        String   @unique
+  judul       String
+  /// Ringkasan/excerpt untuk kartu daftar & meta description SEO.
+  ringkasan   String?  @db.Text
+  /// Body artikel dalam HTML (hasil editor WYSIWYG, sudah disanitasi).
+  konten      String   @db.Text
+  /// URL gambar sampul (mis. /uploads/artikel/xxx.jpg) atau absolut.
+  coverUrl    String?
+  coverAlt    String?
+  /// Nama penulis untuk ditampilkan.
+  penulis     String?
+  /// "draft" (tersembunyi) atau "published" (tampil publik).
+  status      String   @default("draft")
+  isFeatured  Boolean  @default(false)
+  /// Daftar tag bebas (TEXT[]).
+  tags        String[] @default([])
+  /// Estimasi waktu baca (menit), dihitung otomatis dari panjang konten.
+  menitBaca   Int      @default(1)
+  /// Jumlah view (increment saat detail diakses publik).
+  views       Int      @default(0)
+  /// Waktu publish; diisi saat status pertama kali menjadi published.
+  publishedAt DateTime?
+  categoryId  Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category ArtikelKategori? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([isFeatured])
+  @@index([publishedAt])
+  @@map("artikel")
+}
+
 model AiQuery {
   id             BigInt   @id @default(autoincrement())
   query          String

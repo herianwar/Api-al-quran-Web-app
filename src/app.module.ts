@@ -12,6 +12,8 @@ import { EquranModule } from './common/equran/equran.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AdzanModule } from './modules/adzan/adzan.module';
+import { ArtikelModule } from './modules/artikel/artikel.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ApiKeyModule } from './modules/api-key/api-key.module';
@@ -82,6 +84,7 @@ import { WiridModule } from './modules/wirid/wirid.module';
     SeedModule,
     QuranModule,
     AudioModule,
+    AdzanModule,
     TafsirModule,
     TranslationModule,
     AsbabunNuzulModule,
@@ -112,6 +115,8 @@ import { WiridModule } from './modules/wirid/wirid.module';
     NiatShalatModule,
     BacaanShalatModule,
     TahlilModule,
+    // Portal artikel
+    ArtikelModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

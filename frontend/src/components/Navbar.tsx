@@ -8,6 +8,7 @@ import {
   Library,
   Menu,
   Moon,
+  Newspaper,
   ShoppingBag,
   Smartphone,
   Sparkles,
@@ -15,6 +16,7 @@ import {
   Sunrise,
   Target,
   Users,
+  Volume2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -40,11 +42,11 @@ interface NavGroup {
 // center of the bottom row so the shop entry stays prominent.
 const PRIMARY: NavItem[] = [
   { href: "/", label: "Beranda", icon: Home },
+  { href: "/artikel", label: "Artikel", icon: Newspaper },
   { href: "/topic", label: "Tematik", icon: Library },
   { href: "/doa", label: "Doa", icon: Star },
   { href: "/sholat", label: "Sholat", icon: Sunrise },
   { href: "/toko", label: "Toko", icon: ShoppingBag },
-  { href: "/hadis", label: "Hadis", icon: BookOpen },
 ];
 
 // Everything else, semantically grouped. Used by:
@@ -55,6 +57,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "Bacaan",
     items: [
+      { href: "/hadis", label: "Hadis", icon: BookOpen },
       { href: "/hadis-qudsi", label: "Hadis Qudsi", icon: BookOpen },
       { href: "/asmaul-husna", label: "Asmaul Husna", icon: Sparkles },
       { href: "/nabi", label: "Kisah 25 Nabi", icon: Users },
@@ -67,6 +70,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/wirid", label: "Wirid Pagi & Petang", icon: Moon },
       { href: "/qibla", label: "Arah Kiblat", icon: Compass },
+      { href: "/adzan", label: "Audio Adzan", icon: Volume2 },
       { href: "/hijri", label: "Kalender Hijriah", icon: Moon },
       { href: "/shalat/niat", label: "Niat Shalat", icon: Sunrise },
       { href: "/shalat/bacaan", label: "Bacaan Shalat", icon: BookOpen },

@@ -116,6 +116,15 @@ const QUICK_ACTIONS = [
     ring: "ring-fuchsia-100",
     text: "text-fuchsia-700",
   },
+  {
+    href: "/adzan",
+    label: "Audio Adzan",
+    desc: "Suara adzan self-hosted",
+    icon: PlayCircle,
+    bg: "bg-lime-50",
+    ring: "ring-lime-100",
+    text: "text-lime-700",
+  },
 ] as const;
 
 function greetingByHour(): { sapaan: string; ikon: typeof Sunrise } {

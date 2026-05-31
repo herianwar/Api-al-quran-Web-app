@@ -45,6 +45,7 @@ prisma/*.db
 # Runtime data — keep JSON seeds under /data, exclude caches/binaries/uploads
 /data/audio-cache/
 /data/audio-asmaul-husna/
+/data/audio-adzan/
 /data/uploads/
 /data/snapshots/
 

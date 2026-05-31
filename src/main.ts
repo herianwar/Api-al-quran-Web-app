@@ -172,6 +172,7 @@ async function bootstrap(): Promise<void> {
     // Tag descriptions — order matters for the sidebar grouping
     .addTag('Quran', 'Surat, ayat, juz, halaman, search ayat, full dump')
     .addTag('Audio', 'Daftar qari + URL audio + streaming proxy lokal')
+    .addTag('Adzan', 'Audio adzan self-hosted (daftar + streaming proxy lokal)')
     .addTag('Tafsir', 'Tafsir multi-sumber (Kemenag, Ibn Kathir, Muyassar)')
     .addTag('Translation', 'Terjemahan multi-bahasa (Indonesia, English)')
     .addTag('Asbabun Nuzul', 'Konteks turunnya ayat')
@@ -197,6 +198,14 @@ async function bootstrap(): Promise<void> {
     .addTag(
       'Shop Admin',
       'CRUD produk/kategori/banner/setting + upload gambar, form builder & laporan order',
+    )
+    .addTag(
+      'Artikel',
+      'Portal artikel publik: daftar + detail (HTML) + kategori + artikel terkait',
+    )
+    .addTag(
+      'Artikel Admin',
+      'CRUD artikel & kategori + upload gambar (cover/inline editor)',
     )
     .build();
   const document = SwaggerModule.createDocument(app, builtSwaggerConfig);

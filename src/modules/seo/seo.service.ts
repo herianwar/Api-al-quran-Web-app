@@ -88,6 +88,12 @@ const STATIC_ROUTES: Record<
       'Jadwal waktu sholat harian akurat untuk kota-kota di Indonesia: Subuh, Dzuhur, Ashar, Maghrib, Isya.',
     priority: 0.8,
   },
+  '/adzan': {
+    title: 'Audio Adzan',
+    description:
+      'Koleksi audio adzan (panggilan shalat) yang bisa diputar langsung, di-host sendiri dengan kualitas konsisten.',
+    priority: 0.6,
+  },
   '/shalat/niat': {
     title: 'Niat Shalat',
     description:
@@ -129,6 +135,13 @@ const STATIC_ROUTES: Record<
     description:
       'Mushaf, buku islami, dan perlengkapan ibadah pilihan. Belanja mudah langsung via WhatsApp.',
     priority: 0.7,
+  },
+  '/artikel': {
+    title: 'Artikel',
+    description:
+      'Portal artikel Rumah Qur’an: kajian, kisah inspiratif, dan panduan ibadah harian yang ringan dibaca.',
+    priority: 0.8,
+    changefreq: 'daily',
   },
 };
 
@@ -451,6 +464,39 @@ export class SeoService {
         }
       }
 
+      // /artikel/{slug}
+      if (seg[0] === 'artikel' && seg[1]) {
+        const a = await this.prisma.artikel.findFirst({
+          where: { slug: seg[1], status: 'published' },
+          include: { category: { select: { nama: true } } },
+        });
+        if (a) {
+          return {
+            title: a.judul,
+            description: clip(a.ringkasan || stripHtml(a.konten)),
+            ogType: 'article',
+            ogImage: a.coverUrl || undefined,
+            jsonLd: [
+              {
+                '@context': 'https://schema.org',
+                '@type': 'Article',
+                headline: a.judul,
+                description: clip(a.ringkasan || stripHtml(a.konten)),
+                inLanguage: 'id',
+                image: a.coverUrl ? toAbsolute(a.coverUrl, globals.siteUrl) : undefined,
+                author: a.penulis
+                  ? { '@type': 'Person', name: a.penulis }
+                  : { '@type': 'Organization', name: globals.organizationName },
+                datePublished: (a.publishedAt ?? a.createdAt).toISOString(),
+                dateModified: a.updatedAt.toISOString(),
+                articleSection: a.category?.nama,
+                isPartOf: { '@type': 'WebSite', name: globals.siteName },
+              },
+            ],
+          };
+        }
+      }
+
       // /hadis/{perawi}/{nomor}
       if (seg[0] === 'hadis' && seg[1] && seg[2] && /^\d+$/.test(seg[2])) {
         const perawi = await this.prisma.perawi.findUnique({
@@ -546,6 +592,19 @@ export class SeoService {
           path: `/toko/${p.slug}`,
           lastModified: p.updatedAt.toISOString(),
           priority: 0.6,
+        });
+      }
+
+      const artikel = await this.prisma.artikel.findMany({
+        where: { status: 'published' },
+        select: { slug: true, updatedAt: true },
+      });
+      for (const a of artikel) {
+        entries.push({
+          path: `/artikel/${a.slug}`,
+          lastModified: a.updatedAt.toISOString(),
+          changefreq: 'weekly',
+          priority: 0.7,
         });
       }
     } catch (err) {

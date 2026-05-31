@@ -135,6 +135,12 @@ const JOBS: JobDef[] = [
     group: "content",
   },
   {
+    name: "adzan",
+    label: "Audio Adzan",
+    desc: "8 rekaman adzan self-hosted (data/audio-adzan). File diunduh sekali lalu dilayani dari disk lokal. Instan bila file sudah ada.",
+    group: "content",
+  },
+  {
     name: "hadith",
     label: "Hadis (9 perawi)",
     desc: "~38.000 hadis (Bukhari, Muslim, Abu Dawud, Tirmidzi, Nasai, Ibnu Majah, Ahmad, Malik, Darimi) dari renomureza/hadis-api-id (MIT). Self-host total.",

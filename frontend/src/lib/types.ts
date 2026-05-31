@@ -104,6 +104,58 @@ export interface AsmaulHusna {
   faidah?: string | null;
 }
 
+export interface Adzan {
+  id: number;
+  slug: string;
+  judul: string;
+  muadzin?: string | null;
+  lokasi?: string | null;
+  jenis: string;
+  durasi?: number | null;
+  ukuran?: number | null;
+  urutan: number;
+}
+
+// ─── Artikel / Portal ────────────────────────────────────────────────
+export interface ArtikelKategori {
+  id: number;
+  slug: string;
+  nama: string;
+  deskripsi?: string | null;
+  urutan: number;
+  isActive: boolean;
+  jumlahArtikel?: number;
+}
+
+export type ArtikelStatus = "draft" | "published";
+
+/** Card shape returned by list endpoints (no full body). */
+export interface ArtikelListItem {
+  id: number;
+  slug: string;
+  judul: string;
+  ringkasan?: string | null;
+  coverUrl?: string | null;
+  coverAlt?: string | null;
+  penulis?: string | null;
+  status: ArtikelStatus;
+  isFeatured: boolean;
+  tags: string[];
+  menitBaca: number;
+  views: number;
+  publishedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  category?: { id: number; slug: string; nama: string } | null;
+}
+
+/** Full article (detail + admin edit) — adds the HTML body and relations. */
+export interface Artikel extends ArtikelListItem {
+  konten: string;
+  categoryId?: number | null;
+  related?: ArtikelListItem[];
+}
+
 export interface ShopCategory {
   id: number;
   slug: string;

@@ -42,6 +42,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: Home, group: "Overview", exact: true },
   { href: "/admin/users", label: "Pengguna", icon: Users, group: "Pengguna" },
+  { href: "/admin/content/artikel", label: "Artikel", icon: FileText, group: "Konten" },
   { href: "/admin/content/doa", label: "Doa", icon: ScrollText, group: "Konten" },
   { href: "/admin/content/topic", label: "Topik", icon: Tag, group: "Konten" },
   { href: "/admin/content/khutbah", label: "Khutbah", icon: Mic, group: "Konten" },

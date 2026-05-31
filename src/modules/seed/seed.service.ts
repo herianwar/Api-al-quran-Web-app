@@ -42,7 +42,8 @@ export type SeedJobName =
   | 'sajdah'
   | 'niat_shalat'
   | 'bacaan_shalat'
-  | 'tahlil';
+  | 'tahlil'
+  | 'adzan';
 // Jobs included in "Run All Core" — excludes the lengthy/manual ones
 // (audio warm-up, tafsir_extra). startAll iterates this list in order.
 const CORE_JOBS: SeedJobName[] = [
@@ -69,6 +70,7 @@ const ALL_JOBS: SeedJobName[] = [
   'niat_shalat',
   'bacaan_shalat',
   'tahlil',
+  'adzan',
   'embeddings',
   'audio',
 ];
@@ -237,6 +239,8 @@ export class SeedService implements OnModuleInit {
         return this.seedBacaanShalat();
       case 'tahlil':
         return this.seedTahlil();
+      case 'adzan':
+        return this.seedAdzan();
     }
   }
 
@@ -2271,6 +2275,88 @@ export class SeedService implements OnModuleInit {
         if (done % 5 === 0) {
           await this.tick(job, done, items.length, startedAt, it.judul);
         }
+      }
+      await this.markDone(job, done, startedAt);
+    } catch (error) {
+      await this.markError(job, (error as Error).message);
+    }
+  }
+
+  // ─── Seed: Adzan (audio panggilan shalat, self-hosted) ───────────────
+  // Reads data/adzan.json, ensures each MP3 is present on local disk
+  // (downloads from sumberUrl on a fresh machine), then upserts a DB row per
+  // slug. Idempotent: existing files are reused, rows are updated in place.
+
+  async seedAdzan(): Promise<void> {
+    const job: SeedJobName = 'adzan';
+    const claim = await this.tryClaim(job, 0);
+    if (!claim) return;
+    const startedAt = new Date();
+    try {
+      const path = join(__dirname, '..', '..', '..', 'data', 'adzan.json');
+      const audioDir = join(__dirname, '..', '..', '..', 'data', 'audio-adzan');
+      const items: {
+        slug: string;
+        judul: string;
+        muadzin?: string | null;
+        lokasi?: string | null;
+        jenis?: string;
+        file: string;
+        durasi?: number | null;
+        sumberUrl?: string | null;
+      }[] = JSON.parse(await fsp.readFile(path, 'utf-8'));
+      await fsp.mkdir(audioDir, { recursive: true });
+      await this.prisma.seedLog.update({
+        where: { jobName: job },
+        data: { totalItems: items.length },
+      });
+      let done = 0;
+      let urutan = 0;
+      for (const it of items) {
+        urutan += 1;
+        const dest = join(audioDir, it.file);
+        let size: number | null = null;
+        try {
+          size = (await fsp.stat(dest)).size;
+        } catch {
+          // File missing — download from the upstream source if we have one.
+          if (it.sumberUrl) {
+            const response = await axios.get<ArrayBuffer>(it.sumberUrl, {
+              responseType: 'arraybuffer',
+              timeout: 60_000,
+            });
+            await fsp.writeFile(dest, Buffer.from(response.data));
+            size = (await fsp.stat(dest)).size;
+          }
+        }
+        await this.prisma.adzan.upsert({
+          where: { slug: it.slug },
+          update: {
+            judul: it.judul,
+            muadzin: it.muadzin ?? null,
+            lokasi: it.lokasi ?? null,
+            jenis: it.jenis ?? 'umum',
+            file: it.file,
+            durasi: it.durasi ?? null,
+            ukuran: size,
+            sumberUrl: it.sumberUrl ?? null,
+            urutan,
+          },
+          create: {
+            slug: it.slug,
+            judul: it.judul,
+            muadzin: it.muadzin ?? null,
+            lokasi: it.lokasi ?? null,
+            jenis: it.jenis ?? 'umum',
+            file: it.file,
+            durasi: it.durasi ?? null,
+            ukuran: size,
+            sumberUrl: it.sumberUrl ?? null,
+            urutan,
+          },
+        });
+        done++;
+        await this.tick(job, done, items.length, startedAt, it.judul);
       }
       await this.markDone(job, done, startedAt);
     } catch (error) {

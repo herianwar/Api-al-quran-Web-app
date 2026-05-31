@@ -43,6 +43,7 @@ const VALID_JOBS: SeedJobName[] = [
   'niat_shalat',
   'bacaan_shalat',
   'tahlil',
+  'adzan',
 ];
 
 @ApiTags('Seed (Admin)')

@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "adzan-1",
+    "judul": "Adzan Pilihan 1",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az1.mp3",
+    "durasi": 133,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan1.mp3"
+  },
+  {
+    "slug": "adzan-2",
+    "judul": "Adzan Pilihan 2",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az2.mp3",
+    "durasi": 186,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan2.mp3"
+  },
+  {
+    "slug": "adzan-3",
+    "judul": "Adzan Pilihan 3",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az3.mp3",
+    "durasi": 196,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan3.mp3"
+  },
+  {
+    "slug": "adzan-4",
+    "judul": "Adzan Pilihan 4",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az4.mp3",
+    "durasi": 207,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan4.mp3"
+  },
+  {
+    "slug": "adzan-5",
+    "judul": "Adzan Pilihan 5",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az5.mp3",
+    "durasi": 129,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan5.mp3"
+  },
+  {
+    "slug": "adzan-6",
+    "judul": "Adzan Pilihan 6",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az6.mp3",
+    "durasi": 119,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan6.mp3"
+  },
+  {
+    "slug": "adzan-7",
+    "judul": "Adzan Pilihan 7",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az7.mp3",
+    "durasi": 173,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan7.mp3"
+  },
+  {
+    "slug": "adzan-8",
+    "judul": "Adzan Pilihan 8",
+    "muadzin": null,
+    "lokasi": null,
+    "jenis": "umum",
+    "file": "az8.mp3",
+    "durasi": 121,
+    "sumberUrl": "https://www.islamcan.com/audio/adhan/azan8.mp3"
+  }
+]
