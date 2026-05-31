@@ -9,7 +9,15 @@ export interface PushPayload {
   body: string;
   /** Optional click action / deep-link path, e.g. "/surat/1" */
   data?: Record<string, string>;
+  /** Optional absolute image URL shown as the big picture on Android / a rich
+   *  attachment on iOS. Falls back to text-only when omitted. */
+  imageUrl?: string;
 }
+
+/** Android notification channel the client app must create with the SAME id,
+ *  otherwise Android 8+ silently drops the notification. The Flutter app
+ *  registers a channel with this exact id. */
+export const ANDROID_CHANNEL_ID = 'rumahquran_default';
 
 export interface SendResult {
   attempted: number;
@@ -191,8 +199,29 @@ export class NotificationService implements OnModuleInit {
       try {
         const result = await this.messaging.sendEachForMulticast({
           tokens: batch,
-          notification: { title: payload.title, body: payload.body },
+          notification: {
+            title: payload.title,
+            body: payload.body,
+            ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+          },
           data: payload.data,
+          android: {
+            // High priority so it wakes the device; channelId must match the
+            // one the app creates, else Android 8+ drops it. small icon name
+            // must exist in the app's res/drawable (see Flutter setup).
+            priority: 'high',
+            notification: {
+              channelId: ANDROID_CHANNEL_ID,
+              icon: 'ic_notification',
+              ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+            },
+          },
+          apns: {
+            payload: { aps: { sound: 'default', 'mutable-content': 1 } },
+            ...(payload.imageUrl
+              ? { fcmOptions: { imageUrl: payload.imageUrl } }
+              : {}),
+          },
         });
         successful += result.successCount;
         failed += result.failureCount;

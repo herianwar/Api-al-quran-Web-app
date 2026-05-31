@@ -38,6 +38,10 @@ export interface AppConfig {
   snapshotDir: string;
   /** Path to firebase-admin service account JSON. Empty = push disabled. */
   fcmServiceAccountPath?: string;
+  /** Public base URL (no trailing slash), e.g. https://rumahquran.id. Used to
+   * turn stored /uploads/... paths into absolute media links for API clients
+   * (the mobile app can't resolve relative paths). Empty = paths stay relative. */
+  apiPublicUrl?: string;
   /** Email of the user who should be auto-promoted to role=admin at boot. */
   adminBootstrapEmail?: string;
   /** Master key for encrypting AppSetting values flagged `isSecret` (AES-256-GCM).
@@ -114,6 +118,7 @@ export default (): AppConfig => {
     audioCacheDir: process.env.AUDIO_CACHE_DIR ?? '/app/audio-cache',
     snapshotDir: process.env.SNAPSHOT_DIR ?? '/app/snapshots',
     fcmServiceAccountPath: process.env.FCM_SERVICE_ACCOUNT_PATH || undefined,
+    apiPublicUrl: process.env.API_PUBLIC_URL || undefined,
     adminBootstrapEmail: process.env.ADMIN_BOOTSTRAP_EMAIL || undefined,
     appEncryptionKey: process.env.APP_ENCRYPTION_KEY || undefined,
   };

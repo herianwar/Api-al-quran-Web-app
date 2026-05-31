@@ -273,24 +273,35 @@ export class UserService {
   // ─── Device tokens (push notification targets) ──────────────────────
 
   async registerDevice(
-    userId: string,
+    userId: string | null,
     dto: RegisterDeviceDto,
   ): Promise<ResponsePayload<unknown>> {
     // Upsert by unique `token` so the same physical device re-registering
     // (e.g. after re-install) just refreshes the row rather than creating
-    // duplicates. If the token previously belonged to another user (rare —
-    // FCM re-assigns tokens occasionally), we re-claim it for the current
-    // session.
+    // duplicates.
+    //
+    // userId is null for anonymous (not-logged-in) devices. To avoid an
+    // anonymous re-register wiping out an account that already claimed this
+    // token, an anonymous call (userId == null) keeps whatever owner the row
+    // already has; a logged-in call always (re)claims the token for that user.
+    let resolvedUserId = userId;
+    if (userId === null) {
+      const existing = await this.prisma.deviceToken.findUnique({
+        where: { token: dto.token },
+        select: { userId: true },
+      });
+      resolvedUserId = existing?.userId ?? null;
+    }
     const row = await this.prisma.deviceToken.upsert({
       where: { token: dto.token },
       create: {
-        userId,
+        userId: resolvedUserId,
         token: dto.token,
         platform: dto.platform,
         deviceName: dto.deviceName,
       },
       update: {
-        userId,
+        userId: resolvedUserId,
         platform: dto.platform,
         deviceName: dto.deviceName,
         lastSeenAt: new Date(),
@@ -319,6 +330,13 @@ export class UserService {
         error: 'NOT_FOUND',
       });
     }
+    return ok({ deleted: true }, 'Device dihapus dari daftar push');
+  }
+
+  /** Public unregister (no auth): delete a token regardless of owner. Knowing
+   *  the FCM token means you are that device. Idempotent — no 404 if absent. */
+  async unregisterDevicePublic(token: string): Promise<ResponsePayload<unknown>> {
+    await this.prisma.deviceToken.deleteMany({ where: { token } });
     return ok({ deleted: true }, 'Device dihapus dari daftar push');
   }
 

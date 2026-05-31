@@ -349,7 +349,9 @@ model ApiKey {
 
 model DeviceToken {
   id         String   @id @default(uuid())
-  userId     String
+  /// Null = anonymous device (registered before login). Claimed by a user when
+  /// the same token is later registered through the authenticated endpoint.
+  userId     String?
   token      String   @unique
   /// "android" | "ios" | "web"
   platform   String
@@ -358,7 +360,7 @@ model DeviceToken {
   lastSeenAt DateTime @default(now())
   createdAt  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("device_tokens")

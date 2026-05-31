@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { promises as fsp } from 'fs';
 import { join } from 'path';
@@ -13,6 +14,7 @@ import {
   paginationMeta,
 } from '../../common/dto/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   CreateArtikelDto,
   CreateKategoriDto,
@@ -61,7 +63,68 @@ const LIST_SELECT = {
 
 @Injectable()
 export class ArtikelService {
-  constructor(private readonly prisma: PrismaService) {}
+  /** Public base URL (e.g. https://rumahquran.id) used to turn stored
+   *  /uploads/... paths into absolute media links for API clients (the
+   *  Flutter app can't resolve relative paths). Empty → paths stay relative. */
+  private readonly publicBase: string;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    config: ConfigService,
+    private readonly notifications: NotificationService,
+  ) {
+    this.publicBase = (config.get<string>('apiPublicUrl') ?? '').replace(
+      /\/+$/,
+      '',
+    );
+  }
+
+  /** Turn a stored "/uploads/..." path into an absolute URL when a public
+   *  base is configured. Leaves already-absolute or empty values untouched. */
+  private absUrl(url?: string | null): string | null {
+    if (!url) return url ?? null;
+    if (!this.publicBase || /^https?:\/\//i.test(url)) return url;
+    return url.startsWith('/') ? `${this.publicBase}${url}` : url;
+  }
+
+  /** Absolutize a row's coverUrl (shallow clone so we never mutate Prisma's). */
+  private withAbsCover<T extends { coverUrl?: string | null }>(row: T): T {
+    return { ...row, coverUrl: this.absUrl(row.coverUrl) };
+  }
+
+  /** Rewrite inline <img src="/uploads/artikel/..."> in body HTML to absolute
+   *  URLs so the article renders correctly inside the mobile app. */
+  private absBody(html: string): string {
+    if (!this.publicBase) return html;
+    return html.replace(
+      /(src=["'])(\/uploads\/artikel\/)/gi,
+      `$1${this.publicBase}$2`,
+    );
+  }
+
+  /** Build + send a "new article" push to every registered device. Called
+   *  fire-and-forget the first time an article goes live (no-op when FCM is
+   *  unconfigured; never blocks or fails the create/update request). */
+  private async notifyPublished(row: {
+    judul: string;
+    slug: string;
+    ringkasan: string | null;
+    coverUrl: string | null;
+  }): Promise<void> {
+    const data: Record<string, string> = {
+      type: 'artikel',
+      slug: row.slug,
+      deeplink: `/artikel/${row.slug}`,
+    };
+    const cover = this.absUrl(row.coverUrl);
+    if (cover) data.image = cover; // kept in data too for the app's tap handler
+    await this.notifications.sendBroadcast({
+      title: row.judul,
+      body: (row.ringkasan ?? '').trim().slice(0, 160) || 'Artikel baru telah terbit.',
+      data,
+      imageUrl: cover ?? undefined, // big-picture on the notification itself
+    });
+  }
 
   /** Recent (ip→slug) view keys → expiry ms, so a refresh doesn't inflate the
    *  counter. In-memory is fine for the single-instance deployment; entries
@@ -207,7 +270,10 @@ export class ArtikelService {
       }),
     ]);
 
-    return ok(rows, 'Daftar artikel', paginationMeta(query, total));
+    // Public clients (mobile app) need absolute cover URLs; admin keeps the
+    // raw relative paths so its edit form round-trips correctly.
+    const data = publicOnly ? rows.map((r) => this.withAbsCover(r)) : rows;
+    return ok(data, 'Daftar artikel', paginationMeta(query, total));
   }
 
   // ─── Artikel: detail ─────────────────────────────────────────────────
@@ -254,7 +320,12 @@ export class ArtikelService {
     });
 
     return ok(
-      { ...row, views: row.views + (counted ? 1 : 0), related },
+      {
+        ...this.withAbsCover(row),
+        konten: this.absBody(row.konten),
+        views: row.views + (counted ? 1 : 0),
+        related: related.map((r) => this.withAbsCover(r)),
+      },
       'Detail artikel',
     );
   }
@@ -301,6 +372,10 @@ export class ArtikelService {
           categoryId: dto.categoryId ?? null,
         },
       });
+      // Created already-published → announce once (fire-and-forget).
+      if (row.status === 'published') {
+        void this.notifyPublished(row).catch(() => undefined);
+      }
       return ok(row, `Artikel '${row.judul}' dibuat`);
     } catch (err) {
       throw this.mapKnownError(err, `Slug '${dto.slug}'`);
@@ -353,15 +428,22 @@ export class ArtikelService {
     }
 
     // Status transitions stamp publishedAt the first time it goes live.
+    let justPublished = false;
     if (dto.status !== undefined && dto.status !== current.status) {
       data.status = dto.status;
       if (dto.status === 'published' && !current.publishedAt) {
         data.publishedAt = new Date();
+        justPublished = true; // first time live → notify after the write lands
       }
     }
 
     try {
       const row = await this.prisma.artikel.update({ where: { id }, data });
+      // Announce the first publish only (re-publishing an article that already
+      // went live before won't re-notify — publishedAt is already set).
+      if (justPublished) {
+        void this.notifyPublished(row).catch(() => undefined);
+      }
       // Clean up inline images dropped from the body in this edit, plus the
       // previous cover when it was replaced/cleared.
       const removed: string[] = [];

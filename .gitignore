@@ -54,3 +54,6 @@ prisma/*.db
 
 # Quarantined incomplete admin dashboard work-in-progress
 /.quarantine-admin-incomplete/
+
+# Firebase service account & other server secrets
+secrets/

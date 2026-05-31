@@ -84,6 +84,7 @@ export class CronController {
         title: body.title,
         body: body.body,
         data: body.deeplink ? { deeplink: body.deeplink } : undefined,
+        imageUrl: body.imageUrl,
       },
       actor.userId,
     );
