@@ -1073,3 +1073,46 @@ model SeoPage {
   @@index([isActive])
   @@map("seo_pages")
 }
+
+/// Raw per-request API usage log. Short retention (purged after ~7 days by the
+/// daily rollup cron) — only requests attributable to an API key (consumer
+/// apps: web/Android/iOS) are recorded; admin-panel and health calls are not.
+model ApiRequestLog {
+  id         BigInt   @id @default(autoincrement())
+  apiKeyId   String
+  appName    String
+  method     String
+  endpoint   String
+  statusCode Int
+  latencyMs  Int
+  platform   String
+  os         String?
+  device     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([apiKeyId])
+  @@index([endpoint])
+  @@map("api_request_logs")
+}
+
+/// Permanent daily aggregate of API usage, rolled up from ApiRequestLog before
+/// the raw rows are purged. One row per (day, apiKey, platform).
+model ApiUsageDaily {
+  id           BigInt   @id @default(autoincrement())
+  date         DateTime @db.Date
+  apiKeyId     String
+  appName      String
+  platform     String
+  requests     Int      @default(0)
+  errors       Int      @default(0)
+  sumLatencyMs BigInt   @default(0)
+  maxLatencyMs Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([date, apiKeyId, platform])
+  @@index([date])
+  @@index([apiKeyId])
+  @@map("api_usage_daily")
+}

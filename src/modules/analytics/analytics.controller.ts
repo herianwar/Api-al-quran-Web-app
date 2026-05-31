@@ -20,7 +20,11 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AnalyticsService } from './analytics.service';
-import { AnalyticsQueryDto, PageViewDto } from './dto/pageview.dto';
+import {
+  AnalyticsQueryDto,
+  ApiUsageQueryDto,
+  PageViewDto,
+} from './dto/pageview.dto';
 
 @ApiTags('Analytics')
 @Controller('analytics')
@@ -73,5 +77,15 @@ export class AnalyticsAdminController {
   @ApiOperation({ summary: 'Visitors active in the last 5 minutes + top paths' })
   realtime() {
     return this.analytics.getRealtime();
+  }
+
+  @Get('api')
+  @ApiOperation({
+    summary:
+      'API usage per app/platform: headline, daily series, per-app & status splits, top endpoints, latency',
+  })
+  apiUsage(@Query() query: ApiUsageQueryDto) {
+    const days = query.range ? parseInt(query.range, 10) : 7;
+    return this.analytics.getApiUsage(days, query.appId);
   }
 }

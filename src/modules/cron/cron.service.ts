@@ -62,8 +62,19 @@ export class CronService implements OnApplicationBootstrap {
       },
     );
 
+    // API usage rollup + raw-log purge: 01:00 WIB = 18:00 UTC daily. Runs after
+    // midnight so the just-completed day is fully aggregated before purge.
+    await this.queue.add(
+      'api-usage-rollup' as NotificationJobName,
+      {},
+      {
+        repeat: { pattern: '0 18 * * *', tz: 'UTC' },
+        jobId: 'cron:api-usage-rollup',
+      },
+    );
+
     this.logger.log(
-      'Scheduled repeatable jobs: daily-verse, hafalan-reminder, jadwal-warm, db-snapshot',
+      'Scheduled repeatable jobs: daily-verse, hafalan-reminder, jadwal-warm, db-snapshot, api-usage-rollup',
     );
   }
 

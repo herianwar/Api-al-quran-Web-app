@@ -15,6 +15,7 @@ const TABS = [
     icon: Activity,
   },
   { href: "/admin/analytics/search", label: "Search", icon: Search },
+  { href: "/admin/analytics/api-traffic", label: "API", icon: BarChart3 },
 ];
 
 export default function AnalyticsLayout({ children }: { children: ReactNode }) {

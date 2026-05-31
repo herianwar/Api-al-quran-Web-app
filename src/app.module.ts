@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
+import { ApiUsageInterceptor } from './common/interceptors/api-usage.interceptor';
 import { ETagInterceptor } from './common/interceptors/etag.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { EquranModule } from './common/equran/equran.module';
@@ -117,6 +118,10 @@ import { WiridModule } from './modules/wirid/wirid.module';
     // Requires a valid API key (header x-api-key | cookie api_key | seed key)
     // on every route except those marked @SkipApiKey(). Runs after throttling.
     { provide: APP_GUARD, useClass: ApiKeyGuard },
+    // Outermost interceptor: records per-app API usage (fire-and-forget) so it
+    // measures full latency and sees the final status. Must precede the
+    // Transform/ETag interceptors below.
+    { provide: APP_INTERCEPTOR, useClass: ApiUsageInterceptor },
     // Order matters: TransformInterceptor wraps payload in envelope, then
     // ETagInterceptor hashes the final wire format.
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },

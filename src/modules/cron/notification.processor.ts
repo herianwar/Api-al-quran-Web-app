@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { NotificationService } from '../notification/notification.service';
 import { SeedService } from '../seed/seed.service';
 import { SnapshotService } from '../seed/snapshot.service';
@@ -12,7 +13,8 @@ export type NotificationJobName =
   | 'daily-verse'
   | 'hafalan-reminder'
   | 'jadwal-warm'
-  | 'db-snapshot';
+  | 'db-snapshot'
+  | 'api-usage-rollup';
 
 /** Snapshots to keep on disk before older ones are pruned by the cron sweep. */
 const SNAPSHOT_RETENTION = 14;
@@ -33,6 +35,7 @@ export class NotificationProcessor extends WorkerHost {
     private readonly notif: NotificationService,
     private readonly seed: SeedService,
     private readonly snapshot: SnapshotService,
+    private readonly analytics: AnalyticsService,
   ) {
     super();
   }
@@ -47,6 +50,8 @@ export class NotificationProcessor extends WorkerHost {
         return this.jadwalWarm();
       case 'db-snapshot':
         return this.dbSnapshot();
+      case 'api-usage-rollup':
+        return this.analytics.rollupAndPurgeApiUsage();
       default:
         this.logger.warn(`Unknown job name: ${job.name as string}`);
         return null;

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import { createHash, randomBytes } from 'crypto';
 import { ResponsePayload, ok } from '../../common/dto/api-response';
@@ -332,4 +333,352 @@ export class AnalyticsService {
       'Realtime traffic',
     );
   }
+
+  // ───────────────────────── API usage analytics ─────────────────────────
+
+  /**
+   * Per-app API usage dashboard. Combines the permanent daily aggregate (older
+   * days) with a live aggregation of today's raw rows, so figures always
+   * include the current day even though the rollup runs overnight. Top
+   * endpoints / status / latency percentiles come from the raw log and so
+   * reflect at most the retention window (~7 days).
+   */
+  async getApiUsage(
+    rangeDays = 7,
+    appId?: string,
+  ): Promise<ResponsePayload<unknown>> {
+    const RETENTION = 7;
+    const days = [1, 7, 30, 90].includes(rangeDays) ? rangeDays : 7;
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const sinceDate = new Date(todayStart.getTime() - (days - 1) * 86_400_000);
+    const rawSince = new Date(
+      todayStart.getTime() - (Math.min(days, RETENTION) - 1) * 86_400_000,
+    );
+    const keyWhere = appId ? { apiKeyId: appId } : {};
+
+    interface Bucket {
+      dateKey: string;
+      apiKeyId: string;
+      appName: string;
+      platform: string;
+      requests: number;
+      errors: number;
+      sumLatencyMs: number;
+    }
+    type RawBucketRow = {
+      d: Date;
+      apiKeyId: string;
+      appName: string;
+      platform: string;
+      requests: number;
+      errors: number;
+      sumLatencyMs: bigint;
+    };
+
+    // The raw log holds the full retention window (~7d), so read recent days
+    // straight from it — this covers today AND any completed-but-not-yet
+    // rolled-up day (e.g. yesterday before the nightly rollup). Only days
+    // OLDER than the raw window come from the permanent aggregate, so there's
+    // neither a gap nor double counting (rawSince === the raw cutoff).
+    const pastDaily =
+      rawSince.getTime() > sinceDate.getTime()
+        ? await this.prisma.apiUsageDaily.findMany({
+            where: { date: { gte: sinceDate, lt: rawSince }, ...keyWhere },
+          })
+        : [];
+
+    // Recent days [rawSince, now] aggregated live from the raw log, grouped by
+    // day + app + platform (date_trunc isn't expressible via Prisma groupBy).
+    const rawRows = appId
+      ? await this.prisma.$queryRaw<RawBucketRow[]>`
+          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
+                 max("appName") AS "appName", "platform",
+                 count(*)::int AS requests,
+                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
+                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
+          FROM api_request_logs
+          WHERE "createdAt" >= ${rawSince} AND "apiKeyId" = ${appId}
+          GROUP BY 1, 2, 4`
+      : await this.prisma.$queryRaw<RawBucketRow[]>`
+          SELECT date_trunc('day', "createdAt")::date AS d, "apiKeyId",
+                 max("appName") AS "appName", "platform",
+                 count(*)::int AS requests,
+                 count(*) FILTER (WHERE "statusCode" >= 400)::int AS errors,
+                 coalesce(sum("latencyMs"), 0)::bigint AS "sumLatencyMs"
+          FROM api_request_logs
+          WHERE "createdAt" >= ${rawSince}
+          GROUP BY 1, 2, 4`;
+
+    const buckets: Bucket[] = [
+      ...pastDaily.map((r) => ({
+        dateKey: r.date.toISOString().slice(0, 10),
+        apiKeyId: r.apiKeyId,
+        appName: r.appName,
+        platform: r.platform,
+        requests: r.requests,
+        errors: r.errors,
+        sumLatencyMs: Number(r.sumLatencyMs),
+      })),
+      ...rawRows.map((r) => ({
+        dateKey: new Date(r.d).toISOString().slice(0, 10),
+        apiKeyId: r.apiKeyId,
+        appName: r.appName,
+        platform: r.platform,
+        requests: Number(r.requests),
+        errors: Number(r.errors),
+        sumLatencyMs: Number(r.sumLatencyMs),
+      })),
+    ];
+    const todayKey = todayStart.toISOString().slice(0, 10);
+
+    // Headline.
+    const totalRange = buckets.reduce((s, b) => s + b.requests, 0);
+    const errorRange = buckets.reduce((s, b) => s + b.errors, 0);
+    const sumLatency = buckets.reduce((s, b) => s + b.sumLatencyMs, 0);
+    const totalToday = buckets
+      .filter((b) => b.dateKey === todayKey)
+      .reduce((s, b) => s + b.requests, 0);
+    const activeApps = new Set(buckets.map((b) => b.apiKeyId)).size;
+
+    // Daily series (zero-filled across the whole window).
+    const dailyMap = new Map<string, { requests: number; errors: number }>();
+    for (const b of buckets) {
+      const cur = dailyMap.get(b.dateKey) ?? { requests: 0, errors: 0 };
+      cur.requests += b.requests;
+      cur.errors += b.errors;
+      dailyMap.set(b.dateKey, cur);
+    }
+    const daily: { date: string; requests: number; errors: number }[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(sinceDate.getTime() + i * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      const v = dailyMap.get(d) ?? { requests: 0, errors: 0 };
+      daily.push({ date: d, requests: v.requests, errors: v.errors });
+    }
+
+    // Per-app split.
+    const appMap = new Map<
+      string,
+      { appName: string; requests: number; errors: number; sumLatencyMs: number }
+    >();
+    for (const b of buckets) {
+      const cur = appMap.get(b.apiKeyId) ?? {
+        appName: b.appName,
+        requests: 0,
+        errors: 0,
+        sumLatencyMs: 0,
+      };
+      cur.appName = b.appName || cur.appName;
+      cur.requests += b.requests;
+      cur.errors += b.errors;
+      cur.sumLatencyMs += b.sumLatencyMs;
+      appMap.set(b.apiKeyId, cur);
+    }
+    const apps = [...appMap.entries()]
+      .map(([apiKeyId, v]) => ({
+        apiKeyId,
+        appName: v.appName,
+        requests: v.requests,
+        errors: v.errors,
+        errorRatePct: pct(v.errors, v.requests),
+        avgLatencyMs: v.requests ? Math.round(v.sumLatencyMs / v.requests) : 0,
+      }))
+      .sort((a, b) => b.requests - a.requests);
+
+    // Platform split.
+    const platMap = new Map<string, number>();
+    for (const b of buckets)
+      platMap.set(b.platform, (platMap.get(b.platform) ?? 0) + b.requests);
+    const platforms = [...platMap.entries()]
+      .map(([platform, requests]) => ({ platform, requests }))
+      .sort((a, b) => b.requests - a.requests);
+
+    // Raw-only extras (last ≤7 days).
+    const [statusRows, topEndpointRows, topEndpointErrRows, recentErrors, p95] =
+      await Promise.all([
+        this.prisma.apiRequestLog.groupBy({
+          by: ['statusCode'],
+          where: { createdAt: { gte: rawSince }, ...keyWhere },
+          _count: { _all: true },
+        }),
+        this.prisma.apiRequestLog.groupBy({
+          by: ['method', 'endpoint'],
+          where: { createdAt: { gte: rawSince }, ...keyWhere },
+          _count: { _all: true },
+          _avg: { latencyMs: true },
+          orderBy: { _count: { endpoint: 'desc' } },
+          take: 15,
+        }),
+        this.prisma.apiRequestLog.groupBy({
+          by: ['method', 'endpoint'],
+          where: {
+            createdAt: { gte: rawSince },
+            statusCode: { gte: 400 },
+            ...keyWhere,
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.apiRequestLog.findMany({
+          where: {
+            createdAt: { gte: rawSince },
+            statusCode: { gte: 400 },
+            ...keyWhere,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: {
+            createdAt: true,
+            method: true,
+            endpoint: true,
+            statusCode: true,
+            appName: true,
+          },
+        }),
+        this.apiLatencyP95(rawSince, appId),
+      ]);
+
+    const statusClasses = aggregateStatusClasses(
+      statusRows.map((r) => ({
+        statusCode: r.statusCode,
+        count: r._count._all,
+      })),
+    );
+    const errByEndpoint = new Map(
+      topEndpointErrRows.map((r) => [`${r.method} ${r.endpoint}`, r._count._all]),
+    );
+    const topEndpoints = topEndpointRows.map((r) => {
+      const requests = r._count._all;
+      const errors = errByEndpoint.get(`${r.method} ${r.endpoint}`) ?? 0;
+      return {
+        method: r.method,
+        endpoint: r.endpoint,
+        requests,
+        avgLatencyMs: Math.round(r._avg.latencyMs ?? 0),
+        errorRatePct: pct(errors, requests),
+      };
+    });
+
+    return ok(
+      {
+        rangeDays: days,
+        retentionDays: RETENTION,
+        headline: {
+          totalRange,
+          totalToday,
+          errorRange,
+          errorRatePct: pct(errorRange, totalRange),
+          avgLatencyMs: totalRange ? Math.round(sumLatency / totalRange) : 0,
+          p95LatencyMs: p95,
+          activeApps,
+        },
+        daily,
+        apps,
+        platforms,
+        statusClasses,
+        topEndpoints,
+        recentErrors: recentErrors.map((r) => ({
+          createdAt: r.createdAt.toISOString(),
+          method: r.method,
+          endpoint: r.endpoint,
+          statusCode: r.statusCode,
+          appName: r.appName,
+        })),
+      },
+      'API usage analytics',
+    );
+  }
+
+  /** p95 latency (ms) over the raw window. Returns 0 when there's no data. */
+  private async apiLatencyP95(since: Date, appId?: string): Promise<number> {
+    const rows = appId
+      ? await this.prisma.$queryRaw<{ p95: number | null }[]>`
+          SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY "latencyMs") AS p95
+          FROM api_request_logs
+          WHERE "createdAt" >= ${since} AND "apiKeyId" = ${appId}
+        `
+      : await this.prisma.$queryRaw<{ p95: number | null }[]>`
+          SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY "latencyMs") AS p95
+          FROM api_request_logs
+          WHERE "createdAt" >= ${since}
+        `;
+    return Math.round(Number(rows[0]?.p95 ?? 0));
+  }
+
+  /**
+   * Roll completed days from the raw log into the permanent daily aggregate,
+   * then purge raw rows older than the retention window. Idempotent — re-running
+   * for the same day overwrites that day's aggregate.
+   */
+  async rollupAndPurgeApiUsage(
+    retentionDays = 7,
+  ): Promise<{ rolled: number; purged: number }> {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const start = new Date(today.getTime() - retentionDays * 86_400_000);
+
+    const rolled = await this.prisma.$executeRaw(Prisma.sql`
+      INSERT INTO api_usage_daily
+        ("date","apiKeyId","appName","platform","requests","errors","sumLatencyMs","maxLatencyMs","createdAt","updatedAt")
+      SELECT date_trunc('day',"createdAt")::date,
+             "apiKeyId",
+             max("appName"),
+             "platform",
+             count(*)::int,
+             count(*) FILTER (WHERE "statusCode" >= 400)::int,
+             coalesce(sum("latencyMs"),0)::bigint,
+             coalesce(max("latencyMs"),0)::int,
+             now(), now()
+      FROM api_request_logs
+      WHERE "createdAt" >= ${start} AND "createdAt" < ${today}
+      GROUP BY 1,2,4
+      ON CONFLICT ("date","apiKeyId","platform") DO UPDATE SET
+        "requests"     = EXCLUDED."requests",
+        "errors"       = EXCLUDED."errors",
+        "appName"      = EXCLUDED."appName",
+        "sumLatencyMs" = EXCLUDED."sumLatencyMs",
+        "maxLatencyMs" = EXCLUDED."maxLatencyMs",
+        "updatedAt"    = now()
+    `);
+
+    const purged = await this.prisma.$executeRaw(Prisma.sql`
+      DELETE FROM api_request_logs WHERE "createdAt" < ${start}
+    `);
+
+    this.logger.log(
+      `API usage rollup done: ${rolled} daily rows upserted, ${purged} raw logs purged`,
+    );
+    return { rolled: Number(rolled), purged: Number(purged) };
+  }
+}
+
+/** Round a part/total ratio to a 1-decimal percentage. */
+function pct(part: number, total: number): number {
+  if (!total) return 0;
+  return Math.round((part / total) * 1000) / 10;
+}
+
+/** Bucket raw (statusCode, count) rows into 2xx/3xx/4xx/5xx classes. */
+function aggregateStatusClasses(
+  rows: { statusCode: number; count: number }[],
+): { klass: string; requests: number }[] {
+  const order = ['2xx', '3xx', '4xx', '5xx', 'other'];
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const k =
+      r.statusCode >= 200 && r.statusCode < 300
+        ? '2xx'
+        : r.statusCode >= 300 && r.statusCode < 400
+          ? '3xx'
+          : r.statusCode >= 400 && r.statusCode < 500
+            ? '4xx'
+            : r.statusCode >= 500
+              ? '5xx'
+              : 'other';
+    m.set(k, (m.get(k) ?? 0) + r.count);
+  }
+  return order
+    .filter((k) => m.has(k))
+    .map((klass) => ({ klass, requests: m.get(klass)! }));
 }

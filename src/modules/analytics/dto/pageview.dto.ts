@@ -35,3 +35,21 @@ export class AnalyticsQueryDto {
   @IsString()
   range?: string;
 }
+
+export class ApiUsageQueryDto {
+  @ApiPropertyOptional({
+    description: 'Window in days (1, 7, 30, 90). Default 7.',
+    example: 7,
+  })
+  @IsOptional()
+  @IsString()
+  range?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter to a single app by its API key id.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  appId?: string;
+}

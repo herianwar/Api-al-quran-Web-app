@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthModule } from '../auth/auth.module';
 import { SeedModule } from '../seed/seed.module';
 import { CronController } from './cron.controller';
@@ -25,6 +26,7 @@ import {
     }),
     BullModule.registerQueue({ name: NOTIFICATION_QUEUE }),
     SeedModule,
+    AnalyticsModule,
   ],
   controllers: [CronController],
   providers: [CronService, NotificationProcessor],

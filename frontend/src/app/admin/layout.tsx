@@ -64,6 +64,7 @@ const NAV: NavItem[] = [
   { href: "/admin/cron", label: "Cron Jobs", icon: Clock, group: "Notifikasi" },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, group: "Insights" },
   { href: "/admin/analytics/traffic", label: "Traffic Web", icon: BarChart3, group: "Insights" },
+  { href: "/admin/analytics/api-traffic", label: "Traffic API", icon: BarChart3, group: "Insights" },
   { href: "/admin/audit", label: "Audit Log", icon: FileText, group: "Insights" },
   { href: "/admin/seo", label: "SEO", icon: Search, group: "Pengaturan" },
   { href: "/admin/settings/ai", label: "AI Settings", icon: Sparkles, group: "Pengaturan" },
