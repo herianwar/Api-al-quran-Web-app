@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
@@ -12,6 +13,9 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+
+/** Allowed article lifecycle statuses. */
+export const ARTIKEL_STATUSES = ['draft', 'scheduled', 'published'] as const;
 import { PaginationQueryDto } from '../../../common/dto/pagination';
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -44,11 +48,11 @@ export class ArtikelListQueryDto extends PaginationQueryDto {
   featured?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Filter status (admin saja): draft | published',
-    enum: ['draft', 'published'],
+    description: 'Filter status (admin saja): draft | scheduled | published',
+    enum: ARTIKEL_STATUSES,
   })
   @IsOptional()
-  @IsIn(['draft', 'published'])
+  @IsIn(ARTIKEL_STATUSES as unknown as string[])
   status?: string;
 }
 
@@ -94,10 +98,36 @@ export class CreateArtikelDto {
   @MaxLength(120)
   penulis?: string;
 
-  @ApiPropertyOptional({ enum: ['draft', 'published'], default: 'draft' })
+  @ApiPropertyOptional({ enum: ARTIKEL_STATUSES, default: 'draft' })
   @IsOptional()
-  @IsIn(['draft', 'published'])
+  @IsIn(ARTIKEL_STATUSES as unknown as string[])
   status?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO-8601 waktu terbit otomatis (untuk status "scheduled")',
+    example: '2026-06-10T09:00:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+
+  @ApiPropertyOptional({ description: 'Override SEO title' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(180)
+  metaTitle?: string;
+
+  @ApiPropertyOptional({ description: 'Override meta description' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  metaDescription?: string;
+
+  @ApiPropertyOptional({ description: 'URL gambar Open Graph khusus' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  ogImage?: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
@@ -167,10 +197,35 @@ export class UpdateArtikelDto {
   @MaxLength(120)
   penulis?: string;
 
-  @ApiPropertyOptional({ enum: ['draft', 'published'] })
+  @ApiPropertyOptional({ enum: ARTIKEL_STATUSES })
   @IsOptional()
-  @IsIn(['draft', 'published'])
+  @IsIn(ARTIKEL_STATUSES as unknown as string[])
   status?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO-8601 waktu terbit otomatis (untuk status "scheduled")',
+  })
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(180)
+  metaTitle?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  metaDescription?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  ogImage?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -192,6 +247,23 @@ export class UpdateArtikelDto {
   @IsInt()
   @Min(1)
   categoryId?: number | null;
+}
+
+/** Body for bulk admin actions on a set of article ids. */
+export class BulkArtikelDto {
+  @ApiProperty({ type: [Number], example: [1, 2, 3] })
+  @IsArray()
+  @ArrayMaxSize(200)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  ids!: number[];
+
+  @ApiProperty({
+    enum: ['publish', 'draft', 'feature', 'unfeature', 'delete'],
+    description: 'Aksi yang diterapkan ke semua id',
+  })
+  @IsIn(['publish', 'draft', 'feature', 'unfeature', 'delete'])
+  action!: 'publish' | 'draft' | 'feature' | 'unfeature' | 'delete';
 }
 
 export class CreateKategoriDto {

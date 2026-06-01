@@ -42,6 +42,18 @@ export function ArticleContent({ html }: { html: string }) {
       return { id, text, level: h.tagName === "H3" ? 3 : 2 };
     });
     setToc(items);
+
+    // Harden external links (covers legacy content saved before the editor
+    // added rel/target itself): open in a new tab, no referrer leak, nofollow.
+    const links = Array.from(el.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+    for (const a of links) {
+      const href = a.getAttribute("href") ?? "";
+      const external = /^https?:\/\//i.test(href) && !href.includes(location.host);
+      if (external) {
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer nofollow");
+      }
+    }
   }, [html]);
 
   const showToc = useMemo(() => toc.length >= 3, [toc]);

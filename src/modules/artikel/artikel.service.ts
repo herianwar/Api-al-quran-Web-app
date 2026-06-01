@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import {
+  BulkArtikelDto,
   CreateArtikelDto,
   CreateKategoriDto,
   ArtikelListQueryDto,
@@ -56,6 +57,7 @@ const LIST_SELECT = {
   menitBaca: true,
   views: true,
   publishedAt: true,
+  scheduledAt: true,
   createdAt: true,
   updatedAt: true,
   category: { select: { id: true, slug: true, nama: true } },
@@ -148,6 +150,53 @@ export class ArtikelService {
     return true;
   }
 
+  // ─── Scheduled publish (lazy promotion) ──────────────────────────────
+  // No cron infra on this deployment, so articles with status="scheduled"
+  // are promoted to "published" opportunistically whenever the public portal
+  // is hit (list/detail). Throttled so we run at most one cheap query per
+  // window even under heavy traffic.
+  private lastScheduledSweep = 0;
+  private static readonly SCHEDULE_SWEEP_MS = 30_000; // 30s
+
+  /** Promote any "scheduled" article whose time has come. Fire-and-forget;
+   *  sends the publish notification once per promoted article. */
+  async promoteDueScheduled(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastScheduledSweep < ArtikelService.SCHEDULE_SWEEP_MS) return;
+    this.lastScheduledSweep = now;
+    try {
+      const due = await this.prisma.artikel.findMany({
+        where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
+        select: { id: true, judul: true, slug: true, ringkasan: true, coverUrl: true, publishedAt: true },
+      });
+      for (const row of due) {
+        const updated = await this.prisma.artikel.update({
+          where: { id: row.id },
+          data: { status: 'published', publishedAt: row.publishedAt ?? new Date() },
+        });
+        if (!row.publishedAt) void this.notifyPublished(updated).catch(() => undefined);
+      }
+    } catch {
+      /* best-effort; the next sweep retries */
+    }
+  }
+
+  /** Resolve a slug that doesn't collide with another article. Appends
+   *  "-2", "-3"… so a clashing title doesn't 409 — the admin's intent
+   *  (publish now) wins over a perfect slug. */
+  private async uniqueSlug(base: string, ignoreId?: number): Promise<string> {
+    let candidate = base;
+    for (let i = 2; i <= 200; i++) {
+      const clash = await this.prisma.artikel.findFirst({
+        where: { slug: candidate, ...(ignoreId ? { id: { not: ignoreId } } : {}) },
+        select: { id: true },
+      });
+      if (!clash) return candidate;
+      candidate = `${base}-${i}`;
+    }
+    return `${base}-${Date.now()}`;
+  }
+
   // ─── Kategori ────────────────────────────────────────────────────────
 
   async listKategori(onlyActive = false): Promise<ResponsePayload<unknown>> {
@@ -226,6 +275,9 @@ export class ArtikelService {
     query: ArtikelListQueryDto,
     publicOnly: boolean,
   ): Promise<ResponsePayload<unknown>> {
+    // Public hits drive the lazy scheduled-publish promotion (no cron infra).
+    if (publicOnly) void this.promoteDueScheduled();
+
     const where: Prisma.ArtikelWhereInput = {};
 
     if (publicOnly) {
@@ -284,6 +336,8 @@ export class ArtikelService {
     slug: string,
     ip = '',
   ): Promise<ResponsePayload<unknown>> {
+    // A scheduled article whose time has come should be readable immediately.
+    await this.promoteDueScheduled();
     const row = await this.prisma.artikel.findFirst({
       where: { slug, status: 'published' },
       include: { category: { select: { id: true, slug: true, nama: true } } },
@@ -322,6 +376,7 @@ export class ArtikelService {
     return ok(
       {
         ...this.withAbsCover(row),
+        ogImage: this.absUrl(row.ogImage),
         konten: this.absBody(row.konten),
         views: row.views + (counted ? 1 : 0),
         related: related.map((r) => this.withAbsCover(r)),
@@ -347,38 +402,75 @@ export class ArtikelService {
 
   // ─── Artikel: create / update / delete ───────────────────────────────
 
+  /** Resolve the (status, publishedAt, scheduledAt) triple for a target status,
+   *  collapsing a past/missing schedule into an immediate publish. */
+  private resolvePublishState(
+    status: string,
+    scheduledAtRaw: string | null | undefined,
+    currentPublishedAt: Date | null,
+  ): {
+    status: string;
+    publishedAt: Date | null;
+    scheduledAt: Date | null;
+    justPublished: boolean;
+  } {
+    const now = new Date();
+    if (status === 'scheduled') {
+      const when = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+      if (when && !isNaN(when.getTime()) && when.getTime() > now.getTime()) {
+        return { status: 'scheduled', publishedAt: currentPublishedAt, scheduledAt: when, justPublished: false };
+      }
+      status = 'published'; // missing/past schedule → go live now
+    }
+    if (status === 'published') {
+      return {
+        status: 'published',
+        publishedAt: currentPublishedAt ?? now,
+        scheduledAt: null,
+        justPublished: !currentPublishedAt,
+      };
+    }
+    return { status: 'draft', publishedAt: currentPublishedAt, scheduledAt: null, justPublished: false };
+  }
+
   async create(dto: CreateArtikelDto): Promise<ResponsePayload<unknown>> {
     const konten = sanitizeArticleHtml(dto.konten);
     const ringkasan = dto.ringkasan?.trim() || autoExcerpt(konten);
-    const status = dto.status ?? 'draft';
 
     if (dto.categoryId) await this.ensureKategori(dto.categoryId);
+
+    const pub = this.resolvePublishState(dto.status ?? 'draft', dto.scheduledAt, null);
+    const slug = await this.uniqueSlug(dto.slug);
 
     try {
       const row = await this.prisma.artikel.create({
         data: {
-          slug: dto.slug,
+          slug,
           judul: dto.judul,
           ringkasan,
           konten,
           coverUrl: dto.coverUrl,
           coverAlt: dto.coverAlt,
           penulis: dto.penulis,
-          status,
+          status: pub.status,
           isFeatured: dto.isFeatured ?? false,
           tags: normalizeTags(dto.tags),
           menitBaca: estimateReadingMinutes(konten),
-          publishedAt: status === 'published' ? new Date() : null,
+          publishedAt: pub.publishedAt,
+          scheduledAt: pub.scheduledAt,
+          metaTitle: dto.metaTitle || null,
+          metaDescription: dto.metaDescription || null,
+          ogImage: dto.ogImage || null,
           categoryId: dto.categoryId ?? null,
         },
       });
-      // Created already-published → announce once (fire-and-forget).
-      if (row.status === 'published') {
+      // Went live now → announce once (fire-and-forget).
+      if (pub.justPublished) {
         void this.notifyPublished(row).catch(() => undefined);
       }
       return ok(row, `Artikel '${row.judul}' dibuat`);
     } catch (err) {
-      throw this.mapKnownError(err, `Slug '${dto.slug}'`);
+      throw this.mapKnownError(err, `Slug '${slug}'`);
     }
   }
 
@@ -396,13 +488,16 @@ export class ArtikelService {
     if (dto.categoryId) await this.ensureKategori(dto.categoryId);
 
     const data: Prisma.ArtikelUpdateInput = {};
-    if (dto.slug !== undefined) data.slug = dto.slug;
+    if (dto.slug !== undefined) data.slug = await this.uniqueSlug(dto.slug, id);
     if (dto.judul !== undefined) data.judul = dto.judul;
     if (dto.coverUrl !== undefined) data.coverUrl = dto.coverUrl || null;
     if (dto.coverAlt !== undefined) data.coverAlt = dto.coverAlt || null;
     if (dto.penulis !== undefined) data.penulis = dto.penulis || null;
     if (dto.isFeatured !== undefined) data.isFeatured = dto.isFeatured;
     if (dto.tags !== undefined) data.tags = normalizeTags(dto.tags);
+    if (dto.metaTitle !== undefined) data.metaTitle = dto.metaTitle || null;
+    if (dto.metaDescription !== undefined) data.metaDescription = dto.metaDescription || null;
+    if (dto.ogImage !== undefined) data.ogImage = dto.ogImage || null;
 
     if (dto.konten !== undefined) {
       const konten = sanitizeArticleHtml(dto.konten);
@@ -427,14 +522,22 @@ export class ArtikelService {
         : { disconnect: true };
     }
 
-    // Status transitions stamp publishedAt the first time it goes live.
+    // Status / schedule transitions. Handles draft⇄scheduled⇄published and
+    // re-scheduling (changing scheduledAt while staying "scheduled").
     let justPublished = false;
-    if (dto.status !== undefined && dto.status !== current.status) {
-      data.status = dto.status;
-      if (dto.status === 'published' && !current.publishedAt) {
-        data.publishedAt = new Date();
-        justPublished = true; // first time live → notify after the write lands
-      }
+    const statusChanged = dto.status !== undefined && dto.status !== current.status;
+    const targetStatus = dto.status ?? current.status;
+    const rescheduling = dto.scheduledAt !== undefined && targetStatus === 'scheduled';
+    if (statusChanged || rescheduling) {
+      const pub = this.resolvePublishState(
+        targetStatus,
+        dto.scheduledAt ?? current.scheduledAt?.toISOString() ?? null,
+        current.publishedAt,
+      );
+      data.status = pub.status;
+      data.publishedAt = pub.publishedAt;
+      data.scheduledAt = pub.scheduledAt;
+      justPublished = pub.justPublished; // first time live → notify after the write lands
     }
 
     try {
@@ -484,6 +587,115 @@ export class ArtikelService {
     if (row.coverUrl) urls.push(row.coverUrl);
     void this.cleanupOrphans(urls);
     return ok({ id }, 'Artikel dihapus');
+  }
+
+  /** Clone an article as a fresh draft (new unique slug, "(salinan)" title).
+   *  Inline images stay shared — cleanupOrphans checks references before any
+   *  unlink, so neither copy loses its media. */
+  async duplicate(id: number): Promise<ResponsePayload<unknown>> {
+    const src = await this.prisma.artikel.findUnique({ where: { id } });
+    if (!src) {
+      throw new NotFoundException({
+        message: `Artikel #${id} tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
+    const slug = await this.uniqueSlug(`${src.slug}-salinan`);
+    const row = await this.prisma.artikel.create({
+      data: {
+        slug,
+        judul: `${src.judul} (salinan)`,
+        ringkasan: src.ringkasan,
+        konten: src.konten,
+        coverUrl: src.coverUrl,
+        coverAlt: src.coverAlt,
+        penulis: src.penulis,
+        status: 'draft',
+        isFeatured: false,
+        tags: src.tags,
+        menitBaca: src.menitBaca,
+        publishedAt: null,
+        scheduledAt: null,
+        metaTitle: src.metaTitle,
+        metaDescription: src.metaDescription,
+        ogImage: src.ogImage,
+        categoryId: src.categoryId,
+      },
+    });
+    return ok(row, 'Artikel disalin sebagai draft');
+  }
+
+  /** Apply a bulk action to a set of article ids. */
+  async bulkAction(dto: BulkArtikelDto): Promise<ResponsePayload<unknown>> {
+    const ids = [...new Set(dto.ids)].filter((n) => Number.isInteger(n) && n > 0);
+    if (!ids.length) {
+      throw new BadRequestException({
+        message: 'Tidak ada artikel dipilih',
+        error: 'BAD_REQUEST',
+      });
+    }
+    let affected = 0;
+    switch (dto.action) {
+      case 'publish': {
+        const rows = await this.prisma.artikel.findMany({ where: { id: { in: ids } } });
+        for (const r of rows) {
+          if (r.status === 'published') continue;
+          const updated = await this.prisma.artikel.update({
+            where: { id: r.id },
+            data: { status: 'published', publishedAt: r.publishedAt ?? new Date(), scheduledAt: null },
+          });
+          affected++;
+          if (!r.publishedAt) void this.notifyPublished(updated).catch(() => undefined);
+        }
+        break;
+      }
+      case 'draft': {
+        const res = await this.prisma.artikel.updateMany({
+          where: { id: { in: ids } },
+          data: { status: 'draft', scheduledAt: null },
+        });
+        affected = res.count;
+        break;
+      }
+      case 'feature':
+      case 'unfeature': {
+        const res = await this.prisma.artikel.updateMany({
+          where: { id: { in: ids } },
+          data: { isFeatured: dto.action === 'feature' },
+        });
+        affected = res.count;
+        break;
+      }
+      case 'delete': {
+        const rows = await this.prisma.artikel.findMany({
+          where: { id: { in: ids } },
+          select: { coverUrl: true, konten: true },
+        });
+        const res = await this.prisma.artikel.deleteMany({ where: { id: { in: ids } } });
+        affected = res.count;
+        const urls: string[] = [];
+        for (const r of rows) {
+          urls.push(...extractArtikelUploadUrls(r.konten));
+          if (r.coverUrl) urls.push(r.coverUrl);
+        }
+        void this.cleanupOrphans(urls);
+        break;
+      }
+    }
+    return ok({ affected }, `${affected} artikel diperbarui`);
+  }
+
+  /** Distinct tags across all articles with usage counts (for autocomplete). */
+  async listTags(): Promise<ResponsePayload<unknown>> {
+    const rows = await this.prisma.artikel.findMany({ select: { tags: true } });
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const tags = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([tag, count]) => ({ tag, count }));
+    return ok(tags, 'Daftar tag');
   }
 
   /** Unlink uploaded files that no remaining article references (body or

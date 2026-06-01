@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { FolderOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
@@ -217,7 +217,19 @@ export default function AdminArtikelKategoriPage() {
 
       <div className="card divide-y divide-slate-100">
         {(data ?? []).map((c) => (
-          <div key={c.id} className="flex items-center gap-3 p-3 sm:p-4">
+          <div
+            key={c.id}
+            className="flex items-center gap-3 p-3 sm:p-4 hover:bg-slate-50/70 transition"
+          >
+            <div
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
+                c.isActive
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-slate-100 text-slate-400"
+              }`}
+            >
+              <FolderOpen size={18} />
+            </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-semibold text-slate-900 text-sm">{c.nama}</p>

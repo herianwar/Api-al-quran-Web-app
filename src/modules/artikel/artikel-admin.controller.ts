@@ -30,6 +30,7 @@ import { JwtOrAdminKeyGuard } from '../../common/guards/jwt-or-admin-key.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ArtikelService, ARTIKEL_UPLOAD_DIR } from './artikel.service';
 import {
+  BulkArtikelDto,
   CreateArtikelDto,
   CreateKategoriDto,
   ArtikelListQueryDto,
@@ -136,6 +137,22 @@ export class ArtikelAdminController {
     return this.service.registerUpload(file.filename);
   }
 
+  // ─── Tags & bulk (static routes — declared before ':id') ─────────────
+
+  @Get('tags')
+  @ApiOperation({ summary: 'Daftar tag unik + jumlah pemakaian (autocomplete)' })
+  listTags() {
+    return this.service.listTags();
+  }
+
+  @Post('bulk')
+  @ApiOperation({
+    summary: 'Aksi massal: publish | draft | feature | unfeature | delete',
+  })
+  bulk(@Body() dto: BulkArtikelDto) {
+    return this.service.bulkAction(dto);
+  }
+
   // ─── Artikel CRUD ────────────────────────────────────────────────────
 
   @Get()
@@ -154,6 +171,12 @@ export class ArtikelAdminController {
   @ApiOperation({ summary: 'Buat artikel' })
   create(@Body() dto: CreateArtikelDto) {
     return this.service.create(dto);
+  }
+
+  @Post(':id/duplicate')
+  @ApiOperation({ summary: 'Duplikat artikel sebagai draft baru' })
+  duplicate(@Param('id', ParseIntPipe) id: number) {
+    return this.service.duplicate(id);
   }
 
   @Put(':id')

@@ -1,15 +1,25 @@
 "use client";
 
-import { Eye, ImageIcon, Save, Trash2, Upload, X } from "lucide-react";
+import {
+  CalendarClock,
+  Check,
+  Eye,
+  ImageIcon,
+  Save,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { API_URL, apiFetch, fetcher, tokenStore } from "@/lib/api";
-import type { Artikel, ArtikelKategori } from "@/lib/types";
+import type { Artikel, ArtikelKategori, ArtikelStatus, ArtikelTag } from "@/lib/types";
 import { ErrorBox, Spinner } from "@/components/Spinner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { RichTextEditor } from "@/components/RichTextEditor";
+import { TiptapEditor } from "@/components/TiptapEditor";
 
 interface Props {
   mode: "create" | "edit";
@@ -24,10 +34,14 @@ type Form = {
   coverUrl: string;
   coverAlt: string;
   penulis: string;
-  status: "draft" | "published";
+  status: ArtikelStatus;
+  scheduledAt: string; // datetime-local value
   isFeatured: boolean;
   tags: string;
   categoryId: number | "";
+  metaTitle: string;
+  metaDescription: string;
+  ogImage: string;
 };
 
 const EMPTY: Form = {
@@ -39,9 +53,13 @@ const EMPTY: Form = {
   coverAlt: "",
   penulis: "",
   status: "draft",
+  scheduledAt: "",
   isFeatured: false,
   tags: "",
   categoryId: "",
+  metaTitle: "",
+  metaDescription: "",
+  ogImage: "",
 };
 
 /** Turn a title into a URL slug. */
@@ -56,7 +74,7 @@ function slugify(s: string): string {
     .slice(0, 140);
 }
 
-/** Prepend API origin for relative /uploads URLs. */
+/** Prepend API origin for relative /uploads URLs (display only). */
 function resolveImg(url: string): string {
   if (!url) return "";
   if (/^https?:\/\//i.test(url)) return url;
@@ -66,12 +84,33 @@ function resolveImg(url: string): string {
   return url;
 }
 
+/** True when the editor HTML carries real content (text, image, or table). */
+function htmlHasContent(html: string): boolean {
+  const text = html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .trim();
+  return text.length > 0 || /<(img|table|iframe|hr)\b/i.test(html);
+}
+
+/** ISO → value for <input type="datetime-local"> (local time). */
+function toLocalInput(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
 export function ArtikelForm({ mode, id }: Props) {
   const router = useRouter();
   const { data: categories } = useSWR<ArtikelKategori[]>(
     "/admin/artikel/kategori",
     fetcher,
   );
+  const { data: allTags } = useSWR<ArtikelTag[]>("/admin/artikel/tags", fetcher);
   const { data: existing, mutate: refetch } = useSWR<Artikel>(
     mode === "edit" && id ? `/admin/artikel/${id}` : null,
     fetcher,
@@ -83,7 +122,12 @@ export function ArtikelForm({ mode, id }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const coverRef = useRef<HTMLInputElement | null>(null);
+
+  // Snapshot of the last-saved payload (JSON) for dirty tracking + autosave.
+  const savedSnapshot = useRef<string>("");
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     if (mode === "edit" && existing && !hydrated) {
@@ -96,9 +140,13 @@ export function ArtikelForm({ mode, id }: Props) {
         coverAlt: existing.coverAlt ?? "",
         penulis: existing.penulis ?? "",
         status: existing.status,
+        scheduledAt: toLocalInput(existing.scheduledAt),
         isFeatured: existing.isFeatured,
         tags: (existing.tags ?? []).join(", "),
         categoryId: existing.categoryId ?? "",
+        metaTitle: existing.metaTitle ?? "",
+        metaDescription: existing.metaDescription ?? "",
+        ogImage: existing.ogImage ?? "",
       });
       setSlugTouched(true);
       setHydrated(true);
@@ -113,12 +161,12 @@ export function ArtikelForm({ mode, id }: Props) {
     }));
   }
 
-  function buildPayload() {
+  const buildPayload = useCallback(() => {
     const tags = form.tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    return {
+    const payload: Record<string, unknown> = {
       slug: form.slug,
       judul: form.judul,
       ringkasan: form.ringkasan || undefined,
@@ -129,42 +177,98 @@ export function ArtikelForm({ mode, id }: Props) {
       status: form.status,
       isFeatured: form.isFeatured,
       tags,
-      categoryId: form.categoryId === "" ? undefined : Number(form.categoryId),
+      // null (not undefined) so "Tanpa kategori" actually detaches it.
+      categoryId: form.categoryId === "" ? null : Number(form.categoryId),
+      metaTitle: form.metaTitle || undefined,
+      metaDescription: form.metaDescription || undefined,
+      ogImage: form.ogImage || undefined,
     };
-  }
-
-  async function save(overrideStatus?: "draft" | "published") {
-    setBusy(true);
-    setErr(null);
-    setOk(null);
-    try {
-      const payload = buildPayload();
-      if (overrideStatus) payload.status = overrideStatus;
-      if (mode === "create") {
-        const res = await apiFetch<Artikel>("/admin/artikel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        router.push(`/admin/content/artikel/${res.data.id}`);
-      } else {
-        await apiFetch(`/admin/artikel/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (overrideStatus) setForm((f) => ({ ...f, status: overrideStatus }));
-        await refetch();
-        setOk("Tersimpan.");
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Gagal menyimpan");
-    } finally {
-      setBusy(false);
+    if (form.status === "scheduled" && form.scheduledAt) {
+      const d = new Date(form.scheduledAt);
+      if (!isNaN(d.getTime())) payload.scheduledAt = d.toISOString();
     }
-  }
+    return payload;
+  }, [form]);
 
-  async function uploadCover(file: File) {
+  // Track dirtiness against the last-saved snapshot.
+  useEffect(() => {
+    if (!hydrated && mode === "edit") return;
+    dirtyRef.current = JSON.stringify(buildPayload()) !== savedSnapshot.current;
+  }, [buildPayload, hydrated, mode]);
+
+  // Warn before leaving with unsaved changes (full reloads / tab close).
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
+  const save = useCallback(
+    async (overrideStatus?: ArtikelStatus, opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      if (!silent) {
+        setBusy(true);
+        setErr(null);
+        setOk(null);
+      }
+      try {
+        const payload = buildPayload();
+        if (overrideStatus) payload.status = overrideStatus;
+        if (mode === "create") {
+          const res = await apiFetch<Artikel>("/admin/artikel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          savedSnapshot.current = JSON.stringify(payload);
+          dirtyRef.current = false;
+          router.push(`/admin/content/artikel/${res.data.id}`);
+        } else {
+          await apiFetch(`/admin/artikel/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (overrideStatus) setForm((f) => ({ ...f, status: overrideStatus }));
+          savedSnapshot.current = JSON.stringify(
+            overrideStatus ? { ...payload, status: overrideStatus } : payload,
+          );
+          dirtyRef.current = false;
+          const now = new Date();
+          setSavedAt(
+            `${String(now.getHours()).padStart(2, "0")}:${String(
+              now.getMinutes(),
+            ).padStart(2, "0")}`,
+          );
+          if (!silent) {
+            await refetch();
+            setOk("Tersimpan.");
+          }
+        }
+      } catch (e) {
+        if (!silent) setErr(e instanceof Error ? e.message : "Gagal menyimpan");
+      } finally {
+        if (!silent) setBusy(false);
+      }
+    },
+    [buildPayload, id, mode, refetch, router],
+  );
+
+  // Autosave (edit mode only): silently persist 3s after the last change.
+  useEffect(() => {
+    if (mode !== "edit" || !hydrated || busy) return;
+    if (!dirtyRef.current) return;
+    if (!form.judul || !form.slug || !htmlHasContent(form.konten)) return;
+    const t = setTimeout(() => void save(undefined, { silent: true }), 3000);
+    return () => clearTimeout(t);
+  }, [form, mode, hydrated, busy, save]);
+
+  async function uploadImage(file: File, target: "coverUrl" | "ogImage") {
     setBusy(true);
     setErr(null);
     try {
@@ -180,9 +284,9 @@ export function ArtikelForm({ mode, id }: Props) {
       if (!res.ok || !json?.success) {
         throw new Error(json?.message ?? `HTTP ${res.status}`);
       }
-      setForm((f) => ({ ...f, coverUrl: json.data.url as string }));
+      setForm((f) => ({ ...f, [target]: json.data.url as string }));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Upload cover gagal");
+      setErr(e instanceof Error ? e.message : "Upload gambar gagal");
     } finally {
       setBusy(false);
       if (coverRef.current) coverRef.current.value = "";
@@ -192,6 +296,7 @@ export function ArtikelForm({ mode, id }: Props) {
   async function remove() {
     if (!id) return;
     if (!confirm("Hapus artikel ini? Tidak bisa di-undo.")) return;
+    dirtyRef.current = false;
     setBusy(true);
     try {
       await apiFetch(`/admin/artikel/${id}`, { method: "DELETE" });
@@ -202,7 +307,24 @@ export function ArtikelForm({ mode, id }: Props) {
     }
   }
 
-  const canSave = !!form.judul && !!form.slug && !!form.konten.trim();
+  function toggleTag(tag: string) {
+    setForm((f) => {
+      const list = f.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const i = list.indexOf(tag);
+      if (i >= 0) list.splice(i, 1);
+      else list.push(tag);
+      return { ...f, tags: list.join(", ") };
+    });
+  }
+
+  const currentTags = form.tags
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const canSave = !!form.judul && !!form.slug && htmlHasContent(form.konten);
 
   return (
     <div className="space-y-6">
@@ -217,11 +339,16 @@ export function ArtikelForm({ mode, id }: Props) {
         description={
           mode === "edit" && existing
             ? `${existing.judul} (#${existing.id}) · ${existing.views} kali dibaca`
-            : "Tulis konten artikel seperti di Word."
+            : "Tulis konten artikel seperti di Word — sekarang ditenagai Tiptap."
         }
         action={
           mode === "edit" ? (
             <div className="flex items-center gap-2">
+              {savedAt && (
+                <span className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-400">
+                  <Check size={13} /> Tersimpan {savedAt}
+                </span>
+              )}
               <Link
                 href={`/admin/content/artikel/${id}/preview`}
                 target="_blank"
@@ -289,7 +416,7 @@ export function ArtikelForm({ mode, id }: Props) {
           </div>
 
           <Field label="Isi artikel">
-            <RichTextEditor
+            <TiptapEditor
               value={form.konten}
               onChange={(html) => setForm((f) => ({ ...f, konten: html }))}
             />
@@ -305,15 +432,34 @@ export function ArtikelForm({ mode, id }: Props) {
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
-                    status: e.target.value as "draft" | "published",
+                    status: e.target.value as ArtikelStatus,
                   }))
                 }
                 className="rte-input"
               >
                 <option value="draft">Draft (tersembunyi)</option>
+                <option value="scheduled">Terjadwal (terbit otomatis)</option>
                 <option value="published">Published (tampil publik)</option>
               </select>
             </Field>
+            {form.status === "scheduled" && (
+              <Field label="Waktu terbit">
+                <div className="flex items-center gap-2">
+                  <CalendarClock size={16} className="text-emerald-600 shrink-0" />
+                  <input
+                    type="datetime-local"
+                    value={form.scheduledAt}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, scheduledAt: e.target.value }))
+                    }
+                    className="rte-input"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Bila waktu sudah lewat, artikel langsung terbit.
+                </p>
+              </Field>
+            )}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -333,13 +479,13 @@ export function ArtikelForm({ mode, id }: Props) {
               >
                 <Save size={14} /> {busy ? "Menyimpan…" : "Simpan"}
               </button>
-              {form.status === "draft" && (
+              {form.status !== "published" && (
                 <button
                   onClick={() => void save("published")}
                   disabled={busy || !canSave}
                   className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-2 text-sm font-semibold hover:bg-emerald-100 disabled:opacity-40"
                 >
-                  Simpan & Terbitkan
+                  Simpan &amp; Terbitkan sekarang
                 </button>
               )}
             </div>
@@ -379,7 +525,7 @@ export function ArtikelForm({ mode, id }: Props) {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) void uploadCover(f);
+                    if (f) void uploadImage(f, "coverUrl");
                   }}
                 />
               </label>
@@ -437,7 +583,95 @@ export function ArtikelForm({ mode, id }: Props) {
                 placeholder="kajian, sabar, doa"
               />
             </Field>
+            {allTags && allTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {allTags.slice(0, 14).map((t) => {
+                  const on = currentTags.includes(t.tag);
+                  return (
+                    <button
+                      key={t.tag}
+                      type="button"
+                      onClick={() => toggleTag(t.tag)}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
+                        on
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+                      }`}
+                    >
+                      {t.tag}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
+
+          {/* SEO card */}
+          <details className="card p-5 group">
+            <summary className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-700 list-none">
+              <Search size={15} className="text-emerald-600" />
+              SEO &amp; berbagi sosial
+              <span className="ml-auto text-xs text-slate-400 group-open:hidden">
+                buka
+              </span>
+            </summary>
+            <div className="space-y-3 pt-4">
+              <Field label="Meta title (kosong = pakai judul)">
+                <input
+                  value={form.metaTitle}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, metaTitle: e.target.value }))
+                  }
+                  className="rte-input"
+                  maxLength={180}
+                  placeholder={form.judul || "Judul untuk Google"}
+                />
+              </Field>
+              <Field label="Meta description (kosong = pakai ringkasan)">
+                <textarea
+                  value={form.metaDescription}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, metaDescription: e.target.value }))
+                  }
+                  rows={2}
+                  maxLength={320}
+                  className="rte-input resize-y"
+                  placeholder="Deskripsi singkat untuk hasil pencarian & preview link."
+                />
+              </Field>
+              <Field label="Gambar Open Graph (kosong = pakai sampul)">
+                {form.ogImage ? (
+                  <div className="aspect-video rounded-lg bg-slate-100 overflow-hidden mb-2 relative group/og">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={resolveImg(form.ogImage)}
+                      alt="og"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      onClick={() => setForm((f) => ({ ...f, ogImage: "" }))}
+                      className="absolute top-2 right-2 bg-rose-600 text-white rounded-full p-1 opacity-0 group-hover/og:opacity-100 transition"
+                      aria-label="Hapus OG image"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : null}
+                <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-slate-50">
+                  <Upload size={14} /> Upload gambar OG
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void uploadImage(f, "ogImage");
+                    }}
+                  />
+                </label>
+              </Field>
+            </div>
+          </details>
         </div>
       </div>
 

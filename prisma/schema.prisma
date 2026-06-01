@@ -1053,7 +1053,8 @@ model Artikel {
   coverAlt    String?
   /// Nama penulis untuk ditampilkan.
   penulis     String?
-  /// "draft" (tersembunyi) atau "published" (tampil publik).
+  /// "draft" (tersembunyi), "scheduled" (terbit otomatis saat scheduledAt
+  /// tiba) atau "published" (tampil publik).
   status      String   @default("draft")
   isFeatured  Boolean  @default(false)
   /// Daftar tag bebas (TEXT[]).
@@ -1064,6 +1065,14 @@ model Artikel {
   views       Int      @default(0)
   /// Waktu publish; diisi saat status pertama kali menjadi published.
   publishedAt DateTime?
+  /// Jika status "scheduled": waktu artikel akan otomatis terbit.
+  scheduledAt DateTime?
+  /// Override SEO <title>; fallback ke judul bila kosong.
+  metaTitle       String?
+  /// Override meta description; fallback ke ringkasan bila kosong.
+  metaDescription String?  @db.Text
+  /// URL gambar Open Graph khusus; fallback ke coverUrl bila kosong.
+  ogImage         String?
   categoryId  Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1074,6 +1083,7 @@ model Artikel {
   @@index([categoryId])
   @@index([isFeatured])
   @@index([publishedAt])
+  @@index([scheduledAt])
   @@map("artikel")
 }
 

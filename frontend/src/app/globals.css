@@ -468,5 +468,25 @@ body {
   color: var(--foreground-subtle);
   margin-top: 0.5rem;
 }
+/* Inline code + tables (parity with the Tiptap editor). */
+.article-content code {
+  background: var(--surface-muted, #f1f5f9);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  font-size: 0.9em;
+}
+.article-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+.article-content th,
+.article-content td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+}
+.article-content th { background: var(--surface-muted, #f1f5f9); font-weight: 700; }
 /* Clear floats so following headings/paragraphs don't wrap oddly. */
 .article-content::after { content: ""; display: block; clear: both; }

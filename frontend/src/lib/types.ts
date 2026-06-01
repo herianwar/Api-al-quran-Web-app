@@ -127,7 +127,7 @@ export interface ArtikelKategori {
   jumlahArtikel?: number;
 }
 
-export type ArtikelStatus = "draft" | "published";
+export type ArtikelStatus = "draft" | "scheduled" | "published";
 
 /** Card shape returned by list endpoints (no full body). */
 export interface ArtikelListItem {
@@ -144,6 +144,7 @@ export interface ArtikelListItem {
   menitBaca: number;
   views: number;
   publishedAt?: string | null;
+  scheduledAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   category?: { id: number; slug: string; nama: string } | null;
@@ -153,7 +154,16 @@ export interface ArtikelListItem {
 export interface Artikel extends ArtikelListItem {
   konten: string;
   categoryId?: number | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  ogImage?: string | null;
   related?: ArtikelListItem[];
+}
+
+/** A tag with its usage count (admin autocomplete). */
+export interface ArtikelTag {
+  tag: string;
+  count: number;
 }
 
 export interface ShopCategory {
