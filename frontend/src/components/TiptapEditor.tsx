@@ -201,10 +201,13 @@ export function TiptapEditor({
     };
   }, [editor]);
 
-  // Re-seed when the external value changes (e.g. edit-mode hydration), but
-  // only when it differs from the live HTML so we never stomp the caret.
+  // Re-seed only on genuinely EXTERNAL value changes (edit-mode hydration,
+  // switching articles). Never while the editor is focused — Tiptap normalizes
+  // stored HTML on load so getHTML() rarely equals the raw `value`, and calling
+  // setContent mid-edit would wipe the user's formatting + caret. Once the user
+  // is typing/formatting, the editor is the source of truth.
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || editor.isFocused) return;
     const incoming = value || "";
     if (incoming !== editor.getHTML()) {
       editor.commands.setContent(incoming, { emitUpdate: false });
@@ -337,9 +340,9 @@ export function TiptapEditor({
       {imageActive && (
         <div className="flex items-center gap-1 border-b border-slate-200 bg-emerald-50/60 px-3 py-1.5 text-xs text-emerald-800">
           <span className="font-semibold mr-1">Gambar:</span>
-          <button type="button" onClick={() => setImageAlign("left")} className="rounded px-2 py-0.5 hover:bg-emerald-100">Kiri</button>
-          <button type="button" onClick={() => setImageAlign("center")} className="rounded px-2 py-0.5 hover:bg-emerald-100">Tengah</button>
-          <button type="button" onClick={() => setImageAlign("right")} className="rounded px-2 py-0.5 hover:bg-emerald-100">Kanan</button>
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); setImageAlign("left"); }} className="rounded px-2 py-0.5 hover:bg-emerald-100">Kiri</button>
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); setImageAlign("center"); }} className="rounded px-2 py-0.5 hover:bg-emerald-100">Tengah</button>
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); setImageAlign("right"); }} className="rounded px-2 py-0.5 hover:bg-emerald-100">Kanan</button>
         </div>
       )}
 
@@ -402,7 +405,13 @@ function Btn({
       type="button"
       title={title}
       aria-label={title}
-      onClick={onClick}
+      // mousedown + preventDefault keeps the editor's selection intact — a
+      // plain onClick blurs the editor first, so toggles act on a lost/
+      // collapsed selection and formatting appears to "reset".
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onClick();
+      }}
       className={`grid h-8 w-8 place-items-center rounded-md transition ${
         active
           ? "bg-emerald-100 text-emerald-700"

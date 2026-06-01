@@ -128,6 +128,7 @@ export function ArtikelForm({ mode, id }: Props) {
   // Snapshot of the last-saved payload (JSON) for dirty tracking + autosave.
   const savedSnapshot = useRef<string>("");
   const dirtyRef = useRef(false);
+  const baselineSet = useRef(false);
 
   useEffect(() => {
     if (mode === "edit" && existing && !hydrated) {
@@ -190,10 +191,19 @@ export function ArtikelForm({ mode, id }: Props) {
     return payload;
   }, [form]);
 
-  // Track dirtiness against the last-saved snapshot.
+  // Track dirtiness against the last-saved snapshot. The first run after the
+  // form is ready establishes a CLEAN baseline so autosave / the unsaved-leave
+  // warning don't fire just from opening the page.
   useEffect(() => {
     if (!hydrated && mode === "edit") return;
-    dirtyRef.current = JSON.stringify(buildPayload()) !== savedSnapshot.current;
+    const cur = JSON.stringify(buildPayload());
+    if (!baselineSet.current) {
+      savedSnapshot.current = cur;
+      baselineSet.current = true;
+      dirtyRef.current = false;
+      return;
+    }
+    dirtyRef.current = cur !== savedSnapshot.current;
   }, [buildPayload, hydrated, mode]);
 
   // Warn before leaving with unsaved changes (full reloads / tab close).
