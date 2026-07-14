@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { AnalyticsTracker } from "@/components/AnalyticsTracker";
@@ -47,9 +48,26 @@ export default function RootLayout({
           <AnalyticsTracker />
           <Navbar />
           <main className="flex-1">{children}</main>
-          <footer className="border-t border-slate-200 bg-white/60 py-6 text-center text-sm text-slate-500">
-            © {new Date().getFullYear()} Rumah Qur&apos;an · Bacaan,
-            tafsir, doa & ibadah harian dalam satu tempat.
+          <footer className="border-t border-slate-200 bg-white/60 py-6 text-center text-sm text-slate-500 space-y-2">
+            <p>
+              © {new Date().getFullYear()} Rumah Qur&apos;an · Bacaan,
+              tafsir, doa & ibadah harian dalam satu tempat.
+            </p>
+            <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              <Link
+                href="/privacy"
+                className="hover:text-emerald-700 hover:underline"
+              >
+                Kebijakan Privasi
+              </Link>
+              <span aria-hidden="true">·</span>
+              <Link
+                href="/terms"
+                className="hover:text-emerald-700 hover:underline"
+              >
+                Syarat &amp; Ketentuan
+              </Link>
+            </p>
           </footer>
           <BottomNav />
         </AuthProvider>

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { ResponsePayload, ok } from '../../common/dto/api-response';
@@ -33,9 +34,32 @@ export class AuthService {
       });
     }
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prisma.user.create({
-      data: { email: dto.email, passwordHash, nama: dto.nama },
-    });
+    let user: Awaited<ReturnType<typeof this.prisma.user.create>>;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          nama: dto.nama,
+          noHp: dto.noHp ?? null,
+        },
+      });
+    } catch (err) {
+      // Unique violation — email is pre-checked above, so a P2002 here is
+      // almost always the noHp index (race on email lands here too).
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const target = (err.meta?.target as string[] | undefined) ?? [];
+        const onEmail = target.some((t) => t.includes('email'));
+        throw new ConflictException({
+          message: onEmail ? 'Email sudah terdaftar' : 'Nomor HP sudah terdaftar',
+          error: 'CONFLICT',
+        });
+      }
+      throw err;
+    }
     const tokens = await this.issueTokens(user.id, user.email, user.role);
     return ok(
       { user: this.publicUser(user), ...tokens },
@@ -143,6 +167,7 @@ export class AuthService {
     id: string;
     email: string;
     nama: string | null;
+    noHp: string | null;
     role: string;
     createdAt: Date;
   }) {
@@ -150,6 +175,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       nama: user.nama,
+      noHp: user.noHp,
       role: user.role,
       createdAt: user.createdAt,
     };

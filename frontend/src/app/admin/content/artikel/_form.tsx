@@ -84,6 +84,66 @@ function resolveImg(url: string): string {
   return url;
 }
 
+// Cover images are shown in the Android app as a 4:3 hero (~411×300dp) and a
+// 1:1 list thumbnail, so 4:3 is the target ratio. The app never crops (it uses
+// contain + a blurred backdrop), so off-ratio uploads are safe — but the closer
+// the source is to 4:3, the less letterbox/blur appears. We surface that as a
+// non-blocking warning here rather than resizing on the server.
+const IDEAL_COVER_RATIO = 4 / 3;
+const COVER_MIN_WIDTH = 800;
+
+/** Load an image URL and resolve its intrinsic pixel size (0 on failure). */
+function measureImage(src: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => resolve({ w: 0, h: 0 });
+    img.src = src;
+  });
+}
+
+/** Human label for an aspect ratio, snapping to a common one when close. */
+function ratioLabel(w: number, h: number): string {
+  if (!w || !h) return "";
+  const r = w / h;
+  const commons: [number, number][] = [
+    [1, 1], [5, 4], [4, 3], [3, 2], [16, 10], [16, 9], [2, 1], [21, 9],
+    [4, 5], [3, 4], [2, 3], [9, 16],
+  ];
+  let best = commons[0];
+  let bestErr = Infinity;
+  for (const [a, b] of commons) {
+    const err = Math.abs(r - a / b);
+    if (err < bestErr) {
+      bestErr = err;
+      best = [a, b];
+    }
+  }
+  if (bestErr / r < 0.05) return `${best[0]}:${best[1]}`;
+  return `${r.toFixed(2)}:1`;
+}
+
+/** Non-blocking guidance for a cover of the given size ([] when it's fine). */
+function coverWarnings(dims: { w: number; h: number } | null): string[] {
+  if (!dims || !dims.w || !dims.h) return [];
+  const { w, h } = dims;
+  const out: string[] = [];
+  const r = w / h;
+  if (Math.abs(r - IDEAL_COVER_RATIO) / IDEAL_COVER_RATIO > 0.15) {
+    out.push(
+      `Rasio gambar ${ratioLabel(w, h)} — jauh dari rasio ideal 4:3. ` +
+        `Letakkan teks/objek penting di tengah gambar agar tetap terlihat penuh.`,
+    );
+  }
+  if (w < COVER_MIN_WIDTH) {
+    out.push(
+      `Lebar gambar hanya ${w}px — sebaiknya minimal ${COVER_MIN_WIDTH}px ` +
+        `agar tidak buram saat ditampilkan di layar besar.`,
+    );
+  }
+  return out;
+}
+
 /** True when the editor HTML carries real content (text, image, or table). */
 function htmlHasContent(html: string): boolean {
   const text = html
@@ -123,6 +183,9 @@ export function ArtikelForm({ mode, id }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [coverDims, setCoverDims] = useState<{ w: number; h: number } | null>(
+    null,
+  );
   const coverRef = useRef<HTMLInputElement | null>(null);
 
   // Snapshot of the last-saved payload (JSON) for dirty tracking + autosave.
@@ -153,6 +216,22 @@ export function ArtikelForm({ mode, id }: Props) {
       setHydrated(true);
     }
   }, [existing, mode, hydrated]);
+
+  // Measure the cover's intrinsic size whenever it changes (upload or hydrate)
+  // so we can warn about off-ratio / low-res images before publish.
+  useEffect(() => {
+    if (!form.coverUrl) {
+      setCoverDims(null);
+      return;
+    }
+    let cancelled = false;
+    void measureImage(resolveImg(form.coverUrl)).then((d) => {
+      if (!cancelled) setCoverDims(d.w ? d : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.coverUrl]);
 
   function setJudul(judul: string) {
     setForm((f) => ({
@@ -503,15 +582,24 @@ export function ArtikelForm({ mode, id }: Props) {
 
           <div className="card p-5 space-y-3">
             <Field label="Gambar sampul">
-              <div className="aspect-video rounded-lg bg-slate-100 overflow-hidden mb-2 relative group">
+              {/* 4:3 frame with a contain preview — mirrors how the Android
+                  app shows the cover (full image, never cropped, letterbox
+                  filled with a blurred backdrop). The closer the source is to
+                  4:3, the less letterbox appears here and in the app. */}
+              <div className="aspect-[4/3] rounded-lg bg-slate-100 overflow-hidden mb-2 relative group">
                 {form.coverUrl ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={resolveImg(form.coverUrl)}
                       alt={form.coverAlt || "cover"}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
+                    {coverDims && (
+                      <span className="absolute bottom-2 left-2 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        {coverDims.w}×{coverDims.h} · {ratioLabel(coverDims.w, coverDims.h)}
+                      </span>
+                    )}
                     <button
                       onClick={() => setForm((f) => ({ ...f, coverUrl: "" }))}
                       className="absolute top-2 right-2 bg-rose-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
@@ -539,6 +627,22 @@ export function ArtikelForm({ mode, id }: Props) {
                   }}
                 />
               </label>
+              {coverWarnings(coverDims).map((w) => (
+                <p
+                  key={w}
+                  className="mt-2 flex gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs leading-relaxed text-amber-700"
+                >
+                  <span aria-hidden>⚠️</span>
+                  <span>{w}</span>
+                </p>
+              ))}
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                Ukuran ideal <strong className="text-slate-500">1200 × 900 px</strong>{" "}
+                (rasio 4:3, landscape). Gunakan JPG/WebP, ukuran file di bawah ~500&nbsp;KB
+                agar cepat dimuat. Gambar <strong className="text-slate-500">tidak dipotong</strong>{" "}
+                di aplikasi (ditampilkan utuh), tapi rasio mendekati 4:3 membuat tampilan
+                paling rapi. Letakkan teks/objek penting di tengah gambar.
+              </p>
             </Field>
             <Field label="Alt text cover (opsional)">
               <input

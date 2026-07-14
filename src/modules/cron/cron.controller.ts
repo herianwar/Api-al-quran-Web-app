@@ -25,7 +25,12 @@ interface AdminCtx {
   email: string;
 }
 
-const VALID_JOBS: NotificationJobName[] = ['daily-verse', 'hafalan-reminder'];
+const VALID_JOBS: NotificationJobName[] = [
+  'daily-verse',
+  'hafalan-reminder',
+  'puasa-sunnah-besok',
+  'perkiraan-haid',
+];
 
 @ApiTags('Cron / Notifications (Admin)')
 @ApiBearerAuth()

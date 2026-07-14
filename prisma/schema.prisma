@@ -247,6 +247,7 @@ model User {
   email        String   @unique
   passwordHash String
   nama         String?
+  noHp         String?  @unique // nomor HP, E.164 (+62...), opsional
   role         String   @default("user") // user / admin
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -259,6 +260,15 @@ model User {
   notes           AyatNote[]
   readingSessions ReadingSession[]
   readingGoal     ReadingGoal?
+  haidPeriods     HaidPeriod[]
+  qadhaPuasa      QadhaPuasa[]
+  amalanLogs      AmalanLog[]
+  khatamGoal      KhatamGoal?
+  ibadahDaily     UserIbadahDaily[]
+  shopOrders      ShopOrder[]
+  feedback        Feedback[]
+  serambiLikes    SerambiLike[]
+  serambiComments SerambiComment[]
 
   @@map("users")
 }
@@ -318,6 +328,82 @@ model Hafalan {
   @@unique([userId, ayatId])
   @@index([userId, nextReviewAt])
   @@map("hafalan")
+}
+
+// ─── MUSLIMAH: Asisten Haid & Ibadah ───────────────────────────────────
+
+/// One bleeding episode for a user. `jenis` distinguishes the fiqh ruling:
+///  - haid: menstruation (sholat/puasa gugur, puasa wajib diqadha)
+///  - nifas: postpartum bleeding (same ruling as haid, maks 40 hari)
+///  - istihadhah: abnormal bleeding (dihukumi suci — sholat & puasa tetap wajib)
+/// `selesai` null = sedang berlangsung (ongoing).
+model HaidPeriod {
+  id        String    @id @default(uuid())
+  userId    String
+  jenis     String    @default("haid") // haid | nifas | istihadhah
+  mulai     DateTime  @db.Date
+  selesai   DateTime? @db.Date
+  catatan   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mulai])
+  @@map("haid_periods")
+}
+
+/// A fasting-debt ledger entry (utang puasa Ramadhan yang harus diqadha).
+/// `jumlah` = total hari hutang dalam entri ini, `lunas` = hari yang sudah
+/// dibayar. `sumber` mencatat penyebab (haid/nifas/safar/sakit/lainnya).
+model QadhaPuasa {
+  id        String   @id @default(uuid())
+  userId    String
+  sumber    String   @default("haid") // haid | nifas | safar | sakit | lainnya
+  tahun     Int? // tahun Hijriah Ramadhan asal hutang
+  jumlah    Int // total hari hutang
+  lunas     Int      @default(0) // hari yang sudah dibayar
+  catatan   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("qadha_puasa")
+}
+
+/// Checklist amalan harian (habit tracker Islami). Satu baris = satu amalan
+/// yang diselesaikan pada satu hari. Adanya baris = selesai; hapus = batal.
+/// `tanggal` string yyyy-MM-dd (zona lokal user / WIB) agar timezone-aware.
+model AmalanLog {
+  id        String   @id @default(uuid())
+  userId    String
+  tanggal   String
+  key       String // 'subuh' | 'tilawah' | 'dzikir_pagi' | ...
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tanggal, key])
+  @@index([userId, tanggal])
+  @@map("amalan_logs")
+}
+
+/// Rencana khatam Al-Qur'an: target menyelesaikan 30 juz dalam rentang
+/// tanggal. Progress dihitung dari akumulasi ReadingSession.ayatCount sejak
+/// `mulai`. Satu goal aktif per user.
+model KhatamGoal {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  mulai         String // yyyy-MM-dd
+  targetTanggal String // yyyy-MM-dd
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("khatam_goals")
 }
 
 // ─── API KEYS (app/client identification, separate from user JWT) ──────
@@ -545,6 +631,13 @@ model ShopProduct {
   hargaCoret Int?
   /// Stock display — null means "stok tersedia" (no number). 0 means habis.
   stok       Int?
+  /// Average rating 0–5. null means belum ada penilaian. Editable manually.
+  rating     Float?
+  /// Number of ratings behind `rating`. Editable manually.
+  ratingCount Int               @default(0)
+  /// Units sold — auto-incremented when an order is marked `selesai`.
+  /// Also editable manually by admin.
+  soldCount  Int                @default(0)
   /// Per-product WA number override (optional). Falls back to ShopSetting.
   waNumber   String?
   isActive   Boolean            @default(true)
@@ -671,11 +764,18 @@ model ShopOrder {
   status        String       @default("baru")
   /// Internal admin note (not shown to the customer).
   adminNote     String?      @db.Text
+  /// Device identifier for anonymous order tracking (no login required).
+  deviceId      String?
+  /// Owning user when the order was placed while authenticated.
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
   @@index([status, createdAt])
   @@index([createdAt])
+  @@index([deviceId, createdAt])
+  @@index([userId, createdAt])
   @@map("shop_orders")
 }
 
@@ -859,6 +959,37 @@ model ReadingGoal {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("reading_goals")
+}
+
+// ─── DAILY IBADAH ─────────────────────────────────────
+// Checklist sholat 5 waktu per user per hari ("Progress Ibadah Hari Ini").
+// Sholat tak bisa dideteksi otomatis → ditandai manual, disimpan server
+// supaya sinkron antar-perangkat. Reset alami karena keyed per tanggal.
+
+model UserIbadahDaily {
+  id      String @id @default(uuid())
+  userId  String
+  /// Tanggal lokal user (WIB) format yyyy-MM-dd. String supaya timezone-aware.
+  tanggal String
+  subuh   Boolean @default(false)
+  dzuhur  Boolean @default(false)
+  ashar   Boolean @default(false)
+  maghrib Boolean @default(false)
+  isya    Boolean @default(false)
+  /// Ada aktivitas dzikir hari itu (ditandai/sinkron dari device).
+  dzikir  Boolean @default(false)
+  /// Ada aktivitas baca Qur'an (tilawah) hari itu.
+  tilawah Boolean @default(false)
+  /// Ada aktivitas hafalan hari itu.
+  hafalan Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tanggal])
+  @@index([userId, tanggal])
+  @@map("user_ibadah_daily")
 }
 
 // ─── PAGE VIEW ANALYTICS ──────────────────────────────
@@ -1227,4 +1358,131 @@ model ApiUsageDaily {
   @@index([date])
   @@index([apiKeyId])
   @@map("api_usage_daily")
+}
+
+// ─── Wilayah Indonesia (alamat bertingkat 4 level) ────────────────────
+// Seeded from the Kemendagri/BPS dataset (dotted kode wilayah resmi).
+// PK = official region code string. Seeder: scripts/seed-wilayah.js.
+
+model Province {
+  id        String    @id // mis. "32"
+  nama      String
+  regencies Regency[]
+
+  @@map("provinces")
+}
+
+model Regency {
+  id         String     @id // mis. "32.04" (kabupaten/kota)
+  provinceId String
+  province   Province   @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  nama       String
+  districts  District[]
+
+  @@index([provinceId])
+  @@map("regencies")
+}
+
+model District {
+  id        String    @id // mis. "32.04.13" (kecamatan)
+  regencyId String
+  regency   Regency   @relation(fields: [regencyId], references: [id], onDelete: Cascade)
+  nama      String
+  villages  Village[]
+
+  @@index([regencyId])
+  @@map("districts")
+}
+
+model Village {
+  id         String   @id // mis. "32.04.13.2001" (kelurahan/desa)
+  districtId String
+  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  nama       String
+
+  @@index([districtId])
+  @@map("villages")
+}
+
+/// Masukan & pengajuan fitur dari pengguna app (guest atau login). Disubmit
+/// via POST /feedback, dikelola admin di /admin/feedback.
+model Feedback {
+  id           String   @id @default(uuid())
+  kategori     String   // fitur_baru | bug | konten | lainnya
+  judul        String
+  deskripsi    String
+  email        String?  // opsional, untuk balasan manual tim
+  userId       String?  // diisi kalau submit dengan Bearer token valid
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appVersion   String?  // mis. "1.0.0+12"
+  platform     String?  // "android" | "ios" | "web" (string bebas)
+  status       String   @default("baru") // baru | ditinjau | dikerjakan | selesai | ditolak
+  catatanAdmin String?  // catatan internal admin (tidak dikirim ke user)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([kategori])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("feedback")
+}
+
+// ─── SERAMBI (feed kutipan/renungan admin) ────────────
+
+model SerambiPost {
+  id              String   @id @default(uuid())
+  /// Isi kutipan/renungan (wajib, max 2000 divalidasi di DTO).
+  body            String   @db.Text
+  /// Gambar opsional (URL relatif /uploads/... atau absolut).
+  imageUrl        String?
+  authorName      String   @default("Rumah Qur'an")
+  authorAvatarUrl String?
+  /// Badge centang; post admin selalu true.
+  verified        Boolean  @default(true)
+  /// "draft" | "published" | "archived".
+  status          String   @default("published")
+  /// Counter denormalisasi (di-update transaksional).
+  likeCount       Int      @default(0)
+  commentCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  likes    SerambiLike[]
+  comments SerambiComment[]
+
+  @@index([status, createdAt])
+  @@map("serambi_posts")
+}
+
+model SerambiLike {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post SerambiPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+  @@map("serambi_likes")
+}
+
+model SerambiComment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  body      String   @db.Text
+  /// "visible" | "hidden" (moderasi admin).
+  status    String   @default("visible")
+  createdAt DateTime @default(now())
+
+  post SerambiPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([status])
+  @@index([userId])
+  @@map("serambi_comments")
 }

@@ -1,8 +1,22 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ETagCacheable } from '../../common/decorators/etag.decorator';
-import { CreateOrderDto, ProductListQueryDto } from './dto/shop.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import {
+  CreateOrderDto,
+  MyOrdersQueryDto,
+  ProductListQueryDto,
+} from './dto/shop.dto';
 import { ShopOrderService } from './shop-order.service';
 import { ShopService } from './shop.service';
 
@@ -70,11 +84,48 @@ export class ShopController {
   // Stricter than the global 120/min — an order POST is a write that hits the
   // DB and creates a record, so cap submissions per IP to curb spam/abuse.
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({
     summary:
-      'Submit order via form (hanya aktif jika order_mode="form"). Validasi field dinamis server-side.',
+      'Submit order via form (hanya aktif jika order_mode="form"). Validasi field dinamis server-side. ' +
+      'Order diikat ke userId jika login, atau ke deviceId dari body.',
   })
-  createOrder(@Body() dto: CreateOrderDto) {
-    return this.orders.createOrder(dto);
+  createOrder(
+    @Body() dto: CreateOrderDto,
+    @CurrentUser('userId') userId?: string,
+  ) {
+    return this.orders.createOrder(dto, userId);
+  }
+
+  @Get('orders')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Daftar pesanan milik device/user (urut terbaru). Sertakan ?deviceId=XXX, ' +
+      'atau login untuk memuat pesanan terikat akun.',
+  })
+  listMyOrders(
+    @Query() query: MyOrdersQueryDto,
+    @CurrentUser('userId') userId?: string,
+  ) {
+    return this.orders.listMyOrders({ deviceId: query.deviceId, userId });
+  }
+
+  @Get('orders/:orderNumber')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Detail satu pesanan milik device/user berdasarkan orderNumber. ' +
+      'Butuh ?deviceId=XXX yang cocok, atau login sebagai pemilik.',
+  })
+  getMyOrder(
+    @Param('orderNumber') orderNumber: string,
+    @Query() query: MyOrdersQueryDto,
+    @CurrentUser('userId') userId?: string,
+  ) {
+    return this.orders.getMyOrderDetail(orderNumber, {
+      deviceId: query.deviceId,
+      userId,
+    });
   }
 }

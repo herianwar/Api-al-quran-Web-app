@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { LogSessionDto, UpdateGoalDto } from './dto/streak.dto';
+import {
+  LogSessionDto,
+  UpdateGoalDto,
+  UpsertKhatamDto,
+} from './dto/streak.dto';
 import { StreakService } from './streak.service';
 
 @ApiTags('Reading Streak')
@@ -45,5 +57,26 @@ export class StreakController {
     @Body() dto: UpdateGoalDto,
   ) {
     return this.streak.upsertGoal(userId, dto);
+  }
+
+  @Get('khatam')
+  @ApiOperation({ summary: 'Rencana & progress khatam Al-Qur’an' })
+  getKhatam(@CurrentUser('userId') userId: string) {
+    return this.streak.getKhatam(userId);
+  }
+
+  @Put('khatam')
+  @ApiOperation({ summary: 'Set/update rencana khatam (tanggal mulai → target)' })
+  setKhatam(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: UpsertKhatamDto,
+  ) {
+    return this.streak.upsertKhatam(userId, dto);
+  }
+
+  @Delete('khatam')
+  @ApiOperation({ summary: 'Hapus rencana khatam' })
+  deleteKhatam(@CurrentUser('userId') userId: string) {
+    return this.streak.deleteKhatam(userId);
   }
 }

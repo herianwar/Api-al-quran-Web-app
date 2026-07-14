@@ -27,11 +27,15 @@ import { AyatNoteModule } from './modules/ayat-note/ayat-note.module';
 import { BacaanShalatModule } from './modules/bacaan-shalat/bacaan-shalat.module';
 import { CronModule } from './modules/cron/cron.module';
 import { DoaModule } from './modules/doa/doa.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
+import { SerambiModule } from './modules/serambi/serambi.module';
 import { HadisQudsiModule } from './modules/hadis-qudsi/hadis-qudsi.module';
 import { HadithModule } from './modules/hadith/hadith.module';
 import { HealthModule } from './modules/health/health.module';
 import { HijriModule } from './modules/hijri/hijri.module';
+import { IbadahModule } from './modules/ibadah/ibadah.module';
 import { KhutbahModule } from './modules/khutbah/khutbah.module';
+import { MuslimahModule } from './modules/muslimah/muslimah.module';
 import { NabiModule } from './modules/nabi/nabi.module';
 import { NiatShalatModule } from './modules/niat-shalat/niat-shalat.module';
 import { NotificationModule } from './modules/notification/notification.module';
@@ -49,6 +53,7 @@ import { TahlilModule } from './modules/tahlil/tahlil.module';
 import { TopicModule } from './modules/topic/topic.module';
 import { TranslationModule } from './modules/translation/translation.module';
 import { UserModule } from './modules/user/user.module';
+import { WilayahModule } from './modules/wilayah/wilayah.module';
 import { WiridModule } from './modules/wirid/wirid.module';
 
 @Module({
@@ -117,6 +122,16 @@ import { WiridModule } from './modules/wirid/wirid.module';
     TahlilModule,
     // Portal artikel
     ArtikelModule,
+    // Asisten Haid & Ibadah (muslimah)
+    MuslimahModule,
+    // Daily Ibadah Tracking (checklist sholat 5 waktu per hari)
+    IbadahModule,
+    // Wilayah Indonesia (dropdown alamat checkout)
+    WilayahModule,
+    // Masukan & pengajuan fitur dari app + admin panel
+    FeedbackModule,
+    // Serambi: feed kutipan/renungan admin (feed publik + like/komentar user)
+    SerambiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

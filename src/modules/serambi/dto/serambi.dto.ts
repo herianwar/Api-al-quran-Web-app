@@ -1,0 +1,160 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { PaginationQueryDto } from '../../../common/dto/pagination';
+
+/** Status sebuah post Serambi. */
+export const SERAMBI_POST_STATUS = ['draft', 'published', 'archived'] as const;
+
+/** Status moderasi sebuah komentar. */
+export const SERAMBI_COMMENT_STATUS = ['visible', 'hidden'] as const;
+
+/** Trim string; kembalikan undefined kalau kosong (untuk field opsional). */
+const trimOrUndef = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() || undefined : value;
+
+/** Trim string; pertahankan '' (dipakai admin untuk mengosongkan field). */
+const trim = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
+
+// ─── Publik ────────────────────────────────────────────────────────────
+
+/** Body POST /serambi/posts/:id/comments (Bearer wajib). */
+export class CreateCommentDto {
+  @ApiProperty({ example: 'Masya Allah 🌿', minLength: 1, maxLength: 500 })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1, { message: 'Komentar tidak boleh kosong' })
+  @MaxLength(500, { message: 'Komentar maksimal 500 karakter' })
+  body!: string;
+}
+
+// ─── Admin: post ───────────────────────────────────────────────────────
+
+/** Body POST /admin/serambi/posts. */
+export class CreateSerambiPostDto {
+  @ApiProperty({
+    example: 'Sabar itu bukan diam, tapi terus melangkah dalam ketaatan.',
+    minLength: 1,
+    maxLength: 2000,
+  })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1, { message: 'Isi post tidak boleh kosong' })
+  @MaxLength(2000, { message: 'Isi post maksimal 2000 karakter' })
+  body!: string;
+
+  @ApiPropertyOptional({
+    example: '/uploads/serambi/xxx.jpg',
+    description: 'URL gambar (relatif /uploads/... atau absolut)',
+  })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  @MaxLength(500)
+  imageUrl?: string;
+
+  @ApiPropertyOptional({ example: "Rumah Qur'an", default: "Rumah Qur'an" })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  @MaxLength(80)
+  authorName?: string;
+
+  @ApiPropertyOptional({ example: '/uploads/serambi/logo.png' })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  @MaxLength(500)
+  authorAvatarUrl?: string;
+
+  @ApiPropertyOptional({ enum: SERAMBI_POST_STATUS, default: 'published' })
+  @IsOptional()
+  @IsIn(SERAMBI_POST_STATUS as unknown as string[], {
+    message: 'Status tidak valid',
+  })
+  status?: string;
+}
+
+/** Body PATCH /admin/serambi/posts/:id — semua field opsional. */
+export class UpdateSerambiPostDto {
+  @ApiPropertyOptional({ minLength: 1, maxLength: 2000 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(1, { message: 'Isi post tidak boleh kosong' })
+  @MaxLength(2000, { message: 'Isi post maksimal 2000 karakter' })
+  body?: string;
+
+  @ApiPropertyOptional({ description: "Kirim '' untuk menghapus gambar" })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  imageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  authorName?: string;
+
+  @ApiPropertyOptional({ description: "Kirim '' untuk menghapus avatar" })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  authorAvatarUrl?: string;
+
+  @ApiPropertyOptional({ enum: SERAMBI_POST_STATUS })
+  @IsOptional()
+  @IsIn(SERAMBI_POST_STATUS as unknown as string[], {
+    message: 'Status tidak valid',
+  })
+  status?: string;
+}
+
+/** Query GET /admin/serambi/posts. */
+export class AdminPostListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ enum: SERAMBI_POST_STATUS })
+  @IsOptional()
+  @IsIn(SERAMBI_POST_STATUS as unknown as string[])
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Cari di isi post' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  q?: string;
+}
+
+// ─── Admin: komentar ───────────────────────────────────────────────────
+
+/** Body PATCH /admin/serambi/comments/:id. */
+export class UpdateCommentStatusDto {
+  @ApiProperty({ enum: SERAMBI_COMMENT_STATUS })
+  @IsIn(SERAMBI_COMMENT_STATUS as unknown as string[], {
+    message: 'Status komentar tidak valid',
+  })
+  status!: string;
+}
+
+/** Query GET /admin/serambi/comments. */
+export class AdminCommentListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Filter komentar milik satu post' })
+  @IsOptional()
+  @IsString()
+  postId?: string;
+
+  @ApiPropertyOptional({ enum: SERAMBI_COMMENT_STATUS })
+  @IsOptional()
+  @IsIn(SERAMBI_COMMENT_STATUS as unknown as string[])
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Cari di isi komentar' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  q?: string;
+}

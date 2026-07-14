@@ -6,12 +6,20 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { NotificationService } from '../notification/notification.service';
 import { SeedService } from '../seed/seed.service';
 import { SnapshotService } from '../seed/snapshot.service';
+import {
+  addDaysIso,
+  jakartaTodayIso,
+  predictNextHaid,
+  puasaSunnahRange,
+} from '../muslimah/muslimah.fiqh';
 
 export const NOTIFICATION_QUEUE = 'notifications';
 
 export type NotificationJobName =
   | 'daily-verse'
   | 'hafalan-reminder'
+  | 'puasa-sunnah-besok'
+  | 'perkiraan-haid'
   | 'jadwal-warm'
   | 'db-snapshot'
   | 'api-usage-rollup';
@@ -46,6 +54,10 @@ export class NotificationProcessor extends WorkerHost {
         return this.dailyVerse();
       case 'hafalan-reminder':
         return this.hafalanReminder();
+      case 'puasa-sunnah-besok':
+        return this.puasaSunnahBesok();
+      case 'perkiraan-haid':
+        return this.perkiraanHaid();
       case 'jadwal-warm':
         return this.jadwalWarm();
       case 'db-snapshot':
@@ -182,6 +194,79 @@ export class NotificationProcessor extends WorkerHost {
       `hafalan-reminder: ${sent} sent across ${dueByUser.length} users, ${invalid} stale tokens removed`,
     );
     return { users: dueByUser.length, sent, invalid };
+  }
+
+  // ─── Puasa sunnah besok (broadcast) ─────────────────────────────────
+
+  /**
+   * Bila BESOK adalah hari puasa sunnah (Senin/Kamis, Ayyamul Bidh, Arafah,
+   * 'Asyura, dst.), broadcast pengingat ke semua device. Idempotent: konten
+   * deterministik dari tanggal, jadi fire ganda tidak menduplikasi makna.
+   */
+  private async puasaSunnahBesok(): Promise<unknown> {
+    const besok = addDaysIso(jakartaTodayIso(), 1);
+    const days = puasaSunnahRange(besok, 1);
+    if (days.length === 0) return { skipped: true, tanggal: besok };
+    const d = days[0];
+    const labels = d.label.join(' & ');
+    const title = d.utama ? `🌙 Besok ${labels}` : `Besok ${labels}`;
+    const body = `Besok (${d.weekday}, ${d.hijri}) disunnahkan puasa ${labels}. Yuk niatkan & siapkan sahur.`;
+    const result = await this.notif.sendBroadcast({
+      title,
+      body,
+      data: { deeplink: '/muslimah/puasa-sunnah' },
+    });
+    this.logger.log(
+      `puasa-sunnah-besok (${besok}): ${result.successful}/${result.attempted} sent`,
+    );
+    return { tanggal: besok, label: d.label, ...result };
+  }
+
+  // ─── Perkiraan haid (personalized) ──────────────────────────────────
+
+  /**
+   * Untuk tiap user yang punya riwayat haid cukup, prediksi siklus berikutnya.
+   * Bila perkiraan mulai = BESOK (hariLagi === 1), kirim pengingat pribadi
+   * sekali. Karena hanya hariLagi===1 yang memicu, tidak ada spam harian.
+   */
+  private async perkiraanHaid(): Promise<unknown> {
+    const haidUsers = await this.prisma.haidPeriod.findMany({
+      where: { jenis: 'haid' },
+      distinct: ['userId'],
+      select: { userId: true },
+    });
+
+    let notified = 0;
+    let sent = 0;
+    let invalid = 0;
+    for (const { userId } of haidUsers) {
+      const rows = await this.prisma.haidPeriod.findMany({
+        where: { userId },
+        orderBy: { mulai: 'desc' },
+        take: 24,
+        select: { jenis: true, mulai: true, selesai: true },
+      });
+      const periods = rows.map((r) => ({
+        jenis: r.jenis,
+        mulai: r.mulai.toISOString().slice(0, 10),
+        selesai: r.selesai ? r.selesai.toISOString().slice(0, 10) : null,
+      }));
+      const p = predictNextHaid(periods);
+      if (!p.cukupData || p.hariLagi !== 1) continue;
+
+      const result = await this.notif.sendToUser(userId, {
+        title: 'Perkiraan haid besok',
+        body: `Berdasarkan siklusmu (rata-rata ${p.rataSiklus} hari), kemungkinan haid mulai besok. Siapkan diri & catat saat mulai ya.`,
+        data: { deeplink: '/muslimah/haid' },
+      });
+      notified += 1;
+      sent += result.successful;
+      invalid += result.invalidTokensRemoved;
+    }
+    this.logger.log(
+      `perkiraan-haid: notified ${notified}/${haidUsers.length} users, ${sent} sent, ${invalid} stale removed`,
+    );
+    return { candidates: haidUsers.length, notified, sent, invalid };
   }
 
   private truncate(s: string, max: number): string {

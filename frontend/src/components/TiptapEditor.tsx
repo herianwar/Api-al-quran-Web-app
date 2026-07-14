@@ -6,6 +6,7 @@ import {
   AlignRight,
   Bold,
   Code,
+  Code2,
   Heading2,
   Heading3,
   ImagePlus,
@@ -87,6 +88,8 @@ export function TiptapEditor({
 }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Raw-HTML "source" mode: paste full HTML and it renders as-is on switch back.
+  const [htmlMode, setHtmlMode] = useState(false);
   // Bump to re-render the toolbar when selection/marks change.
   const [, setTick] = useState(0);
   // Stable ref to the editor so paste/drop handlers (defined at config time)
@@ -215,6 +218,19 @@ export function TiptapEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, editor]);
 
+  // Toggle between the visual editor and a raw-HTML textarea. When leaving
+  // HTML mode, feed the (possibly pasted) HTML back into Tiptap so it renders.
+  const toggleHtmlMode = useCallback(() => {
+    if (!editor) return;
+    setHtmlMode((on) => {
+      if (on) {
+        // html → visual: re-parse the current value into the editor.
+        editor.commands.setContent(value || "", { emitUpdate: true });
+      }
+      return !on;
+    });
+  }, [editor, value]);
+
   const addLink = useCallback(() => {
     if (!editor) return;
     const prev = editor.getAttributes("link").href as string | undefined;
@@ -250,6 +266,13 @@ export function TiptapEditor({
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-100 transition">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200 bg-slate-50/80 px-2 py-1.5 sticky top-0 z-10">
+        {htmlMode ? (
+          <span className="px-1.5 text-xs font-semibold text-emerald-700">
+            Mode HTML — tempel kode HTML, lalu klik tombol{" "}
+            <Code2 size={13} className="inline -mt-0.5" /> lagi untuk lihat hasilnya
+          </span>
+        ) : (
+          <>
         <Btn title="Paragraf" active={editor.isActive("paragraph") && !editor.isActive("heading")} onClick={() => editor.chain().focus().setParagraph().run()}>
           <Pilcrow size={16} />
         </Btn>
@@ -323,6 +346,16 @@ export function TiptapEditor({
         <Btn title="Ulangi" onClick={() => editor.chain().focus().redo().run()}>
           <Redo2 size={16} />
         </Btn>
+          </>
+        )}
+        <span className="ml-auto" />
+        <Btn
+          title={htmlMode ? "Kembali ke editor visual" : "Edit / tempel HTML"}
+          active={htmlMode}
+          onClick={toggleHtmlMode}
+        >
+          <Code2 size={16} />
+        </Btn>
         <input
           ref={fileRef}
           type="file"
@@ -337,7 +370,7 @@ export function TiptapEditor({
       </div>
 
       {/* Contextual image-alignment bar */}
-      {imageActive && (
+      {imageActive && !htmlMode && (
         <div className="flex items-center gap-1 border-b border-slate-200 bg-emerald-50/60 px-3 py-1.5 text-xs text-emerald-800">
           <span className="font-semibold mr-1">Gambar:</span>
           <button type="button" onMouseDown={(e) => { e.preventDefault(); setImageAlign("left"); }} className="rounded px-2 py-0.5 hover:bg-emerald-100">Kiri</button>
@@ -346,7 +379,17 @@ export function TiptapEditor({
         </div>
       )}
 
-      <EditorContent editor={editor} />
+      {htmlMode ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChangeRef.current(e.target.value)}
+          spellCheck={false}
+          placeholder="<p>Tempel kode HTML di sini…</p>"
+          className="block w-full min-h-[360px] max-h-[70vh] resize-y px-4 py-4 font-mono text-[13px] leading-relaxed text-slate-800 outline-none"
+        />
+      ) : (
+        <EditorContent editor={editor} />
+      )}
 
       {/* Footer: live word + reading-time count */}
       <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/60 px-3 py-1.5 text-xs text-slate-500">

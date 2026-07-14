@@ -224,15 +224,19 @@ export class ShopService {
         { deskripsi: { contains: query.q, mode: 'insensitive' } },
       ];
     }
+    // Default (and `sort=featured`) keeps the existing unggulan-first order so
+    // callers without `sort` get identical results (backward-compatible).
+    const orderBy: Prisma.ShopProductOrderByWithRelationInput[] =
+      query.sort === 'price_asc'
+        ? [{ hargaIdr: 'asc' }, { id: 'asc' }]
+        : query.sort === 'price_desc'
+          ? [{ hargaIdr: 'desc' }, { id: 'asc' }]
+          : [{ isFeatured: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }];
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.shopProduct.count({ where }),
       this.prisma.shopProduct.findMany({
         where,
-        orderBy: [
-          { isFeatured: 'desc' },
-          { sortOrder: 'asc' },
-          { createdAt: 'desc' },
-        ],
+        orderBy,
         include: {
           category: { select: { slug: true, nama: true } },
           images: { orderBy: { sortOrder: 'asc' }, take: 1 },

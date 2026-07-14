@@ -191,6 +191,9 @@ export interface ShopProduct {
   hargaIdr: number;
   hargaCoret?: number | null;
   stok?: number | null;
+  rating?: number | null;
+  ratingCount: number;
+  soldCount: number;
   waNumber?: string | null;
   isActive: boolean;
   isFeatured: boolean;
@@ -348,4 +351,201 @@ export interface AuthTokens {
 
 export interface AuthResult extends AuthTokens {
   user: User;
+}
+
+// ─── Muslimah: Asisten Haid & Ibadah ────────────────────────────────────
+
+export type HaidJenis = "haid" | "nifas" | "istihadhah";
+export type IbadahStatus = HaidJenis | "suci";
+
+export interface HaidPeriod {
+  id: string;
+  jenis: HaidJenis;
+  mulai: string; // YYYY-MM-DD
+  selesai: string | null;
+  berlangsung: boolean;
+  durasiHari: number | null;
+  catatan: string | null;
+  createdAt: string;
+  updatedAt: string;
+  qadhaRamadhan?: number; // hanya pada response create
+}
+
+export interface IbadahRuling {
+  status: IbadahStatus;
+  label: string;
+  sholat: { boleh: boolean; teks: string };
+  puasa: { boleh: boolean; teks: string };
+  tilawah: { boleh: boolean; teks: string };
+  catatan: string[];
+}
+
+export interface IbadahStatusResult {
+  tanggal: string;
+  hijri: { formatted: string; weekday: string };
+  status: IbadahStatus;
+  hariKe: number | null;
+  periode: HaidPeriod | null;
+  ibadah: IbadahRuling;
+}
+
+export interface PuasaSunnahDay {
+  tanggal: string;
+  weekday: string;
+  hijri: string;
+  hijriDay: number;
+  hijriMonth: number;
+  label: string[];
+  utama: boolean;
+  haid: boolean;
+}
+
+export interface HariTerlarang {
+  tanggal: string;
+  weekday: string;
+  hijri: string;
+  sebab: string;
+}
+
+export interface PuasaSunnahResult {
+  mulai: string;
+  akhir: string;
+  hari: number;
+  puasaSunnah: PuasaSunnahDay[];
+  hariTerlarang: HariTerlarang[];
+}
+
+export interface QadhaPuasa {
+  id: string;
+  sumber: string;
+  tahun: number | null;
+  jumlah: number;
+  lunas: number;
+  sisa: number;
+  selesai: boolean;
+  catatan: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrediksiHaid {
+  cukupData: boolean;
+  jumlahData: number;
+  rataSiklus: number | null;
+  rataDurasi: number | null;
+  haidTerakhir: string | null;
+  prediksiMulai: string | null;
+  prediksiSelesai: string | null;
+  hariLagi: number | null;
+  keterangan: string;
+}
+
+export interface AmalanItem {
+  key: string;
+  label: string;
+  grup: string;
+  done: boolean;
+}
+
+export interface AmalanHari {
+  tanggal: string;
+  total: number;
+  selesai: number;
+  persen: number;
+  items: AmalanItem[];
+}
+
+export interface AmalanStats {
+  current: number;
+  activeToday: boolean;
+  total: number;
+  last14: { tanggal: string; count: number }[];
+}
+
+export interface MuslimahDashboard {
+  tanggal: string;
+  hijri: { formatted: string; weekday: string };
+  statusHaid: {
+    status: IbadahStatus;
+    label: string;
+    hariKe: number | null;
+    periode: HaidPeriod | null;
+    ibadah: IbadahRuling;
+  };
+  qadhaPuasa: { totalHutang: number; totalLunas: number; sisa: number };
+  puasaSunnahBerikutnya: PuasaSunnahDay | null;
+  hafalanReviewDue: number;
+  amalanHariIni: { selesai: number; total: number; persen: number };
+  prediksi: {
+    cukupData: boolean;
+    prediksiMulai: string | null;
+    hariLagi: number | null;
+    rataSiklus: number | null;
+    keterangan: string;
+  };
+}
+
+// ─── Tilawah & Khatam ───────────────────────────────────────────────────
+
+export interface ReadingGoal {
+  unit: string;
+  target: number;
+  default?: boolean;
+}
+
+export interface ReadingStreak {
+  current: number;
+  longest: number;
+  todayCount: number;
+  activeToday: boolean;
+  last30Days: { tanggal: string; ayatCount: number }[];
+}
+
+export interface KhatamProgress {
+  id: string;
+  mulai: string;
+  targetTanggal: string;
+  totalAyat: number;
+  ayatDibaca: number;
+  sisaAyat: number;
+  persen: number;
+  totalHari: number;
+  hariBerjalan: number;
+  sisaHari: number;
+  targetPerHari: number;
+  targetPerHariSisa: number;
+  onTrack: boolean;
+  selesai: boolean;
+}
+
+// ─── Serambi (feed kutipan/renungan admin) ──────────────────────────────
+
+export type SerambiStatus = "draft" | "published" | "archived";
+export type SerambiCommentStatus = "visible" | "hidden";
+
+/** Post Serambi (bentuk admin — raw row dari /admin/serambi/posts). */
+export interface SerambiPost {
+  id: string;
+  body: string;
+  imageUrl: string | null;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  verified: boolean;
+  status: SerambiStatus;
+  likeCount: number;
+  commentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Komentar Serambi untuk moderasi admin (+ user & post terkait). */
+export interface SerambiComment {
+  id: string;
+  postId: string;
+  userId: string;
+  body: string;
+  status: SerambiCommentStatus;
+  createdAt: string;
+  user?: { id: string; nama: string | null; email: string } | null;
+  post?: { id: string; body: string } | null;
 }

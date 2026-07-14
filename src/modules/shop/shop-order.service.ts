@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -159,7 +160,10 @@ export class ShopOrderService {
 
   // ─── Public order submission ────────────────────────────────────────
 
-  async createOrder(dto: CreateOrderDto): Promise<ResponsePayload<unknown>> {
+  async createOrder(
+    dto: CreateOrderDto,
+    userId?: string,
+  ): Promise<ResponsePayload<unknown>> {
     const settings = await this.shop.getRawSettings();
     if (settings.order_mode !== 'form') {
       throw new BadRequestException({
@@ -203,11 +207,16 @@ export class ShopOrderService {
       values.push({ key: f.key, label: f.label, type: f.type, value });
     }
 
+    const quantity = dto.quantity ?? 1;
+
     // Resolve product snapshot (optional).
     let productId: number | null = null;
     let productName = 'Pesanan';
     let productSlug: string | null = null;
     let hargaIdr = 0;
+    // Quantity to reserve from stock at insert time; null = product has no
+    // stock tracking (stok === null → unlimited), so nothing to decrement.
+    let reserveStock: number | null = null;
     if (dto.productSlug) {
       const product = await this.prisma.shopProduct.findUnique({
         where: { slug: dto.productSlug },
@@ -224,27 +233,43 @@ export class ShopOrderService {
           error: 'BAD_REQUEST',
         });
       }
+      // Fast feedback before we attempt the insert; the authoritative,
+      // race-safe check is the conditional decrement inside the transaction.
+      if (product.stok !== null && product.stok < quantity) {
+        throw new ConflictException({
+          message: 'Stok tidak mencukupi',
+          error: 'CONFLICT',
+        });
+      }
       productId = product.id;
       productName = product.nama;
       productSlug = product.slug;
       hargaIdr = product.hargaIdr;
+      if (product.stok !== null) reserveStock = quantity;
     }
-    const quantity = dto.quantity ?? 1;
     const totalIdr = hargaIdr * quantity;
 
     const { customerName, customerPhone } = this.deriveContact(values);
 
-    const order = await this.createWithUniqueNumber({
-      productId,
-      productName,
-      productSlug,
-      hargaIdr,
-      quantity,
-      totalIdr,
-      fields: values as unknown as Prisma.InputJsonValue,
-      customerName,
-      customerPhone,
-    });
+    const order = await this.createWithUniqueNumber(
+      {
+        productId,
+        productName,
+        productSlug,
+        hargaIdr,
+        quantity,
+        totalIdr,
+        fields: values as unknown as Prisma.InputJsonValue,
+        customerName,
+        customerPhone,
+        // Authenticated orders are bound to the user; anonymous ones to the
+        // device. We keep deviceId too even when logged in — harmless, and it
+        // lets a later anonymous lookup from the same device still match.
+        deviceId: dto.deviceId ?? null,
+        userId: userId ?? null,
+      },
+      reserveStock,
+    );
 
     return ok(
       {
@@ -254,6 +279,132 @@ export class ShopOrderService {
       },
       'Pesanan berhasil dikirim',
     );
+  }
+
+  // ─── Customer order lookup ("pesanan saya") ─────────────────────────
+
+  /** List a customer's own orders (newest first). Matched by deviceId and/or
+   * the authenticated userId. At least one identifier is required. */
+  async listMyOrders(opts: {
+    deviceId?: string;
+    userId?: string;
+  }): Promise<ResponsePayload<unknown>> {
+    const where = this.ownerWhere(opts);
+    const rows = await this.prisma.shopOrder.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        product: {
+          select: {
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { url: true, alt: true },
+            },
+          },
+        },
+      },
+    });
+    return ok(
+      rows.map((o) => this.toMyOrderListItem(o)),
+      'Daftar pesanan saya',
+      { total: rows.length },
+    );
+  }
+
+  /** Detail of one of the customer's own orders, looked up by orderNumber.
+   * Returns 404 (not 403) when the order isn't owned by the caller, so we
+   * don't leak whether a given order number exists. */
+  async getMyOrderDetail(
+    orderNumber: string,
+    opts: { deviceId?: string; userId?: string },
+  ): Promise<ResponsePayload<unknown>> {
+    const owner = this.ownerWhere(opts);
+    const row = await this.prisma.shopOrder.findFirst({
+      where: { orderNumber, ...owner },
+      include: {
+        product: {
+          select: {
+            slug: true,
+            nama: true,
+            isActive: true,
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { url: true, alt: true },
+            },
+          },
+        },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        message: `Pesanan '${orderNumber}' tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
+    return ok(
+      {
+        orderNumber: row.orderNumber,
+        status: row.status,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        produk: {
+          nama: row.productName,
+          slug: row.productSlug,
+          gambar: row.product?.images[0]?.url ?? null,
+        },
+        quantity: row.quantity,
+        hargaIdr: row.hargaIdr,
+        total: row.totalIdr,
+        // Submitted form values (label + value), so the customer sees what
+        // they entered (nama, alamat, dll).
+        fields: this.readValues(row.fields),
+      },
+      'Detail pesanan',
+    );
+  }
+
+  /** Build the ownership filter shared by the list and detail lookups. */
+  private ownerWhere(opts: {
+    deviceId?: string;
+    userId?: string;
+  }): Prisma.ShopOrderWhereInput {
+    const or: Prisma.ShopOrderWhereInput[] = [];
+    if (opts.userId) or.push({ userId: opts.userId });
+    if (opts.deviceId) or.push({ deviceId: opts.deviceId });
+    if (or.length === 0) {
+      throw new BadRequestException({
+        message: 'deviceId wajib diisi (atau login terlebih dahulu).',
+        error: 'BAD_REQUEST',
+      });
+    }
+    return { OR: or };
+  }
+
+  private toMyOrderListItem(o: {
+    orderNumber: string;
+    status: string;
+    createdAt: Date;
+    productName: string;
+    productSlug: string | null;
+    quantity: number;
+    totalIdr: number;
+    product: { images: { url: string; alt: string | null }[] } | null;
+  }) {
+    return {
+      orderNumber: o.orderNumber,
+      status: o.status,
+      createdAt: o.createdAt,
+      produk: {
+        nama: o.productName,
+        slug: o.productSlug,
+        gambar: o.product?.images[0]?.url ?? null,
+      },
+      quantity: o.quantity,
+      total: o.totalIdr,
+    };
   }
 
   // ─── Admin order management ─────────────────────────────────────────
@@ -291,27 +442,48 @@ export class ShopOrderService {
     id: number,
     dto: UpdateOrderStatusDto,
   ): Promise<ResponsePayload<unknown>> {
-    try {
-      const row = await this.prisma.shopOrder.update({
+    const existing = await this.prisma.shopOrder.findUnique({
+      where: { id },
+      select: { status: true, productId: true, quantity: true },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        message: `Order #${id} tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
+
+    // soldCount tracks units of completed orders. Adjust it only on the
+    // transition in/out of 'selesai' so repeated updates never double-count.
+    const wasDone = existing.status === 'selesai';
+    const willBeDone = dto.status === 'selesai';
+    let soldDelta = 0;
+    if (!wasDone && willBeDone) soldDelta = existing.quantity;
+    else if (wasDone && !willBeDone) soldDelta = -existing.quantity;
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.shopOrder.update({
         where: { id },
         data: {
           status: dto.status,
           ...(dto.adminNote !== undefined ? { adminNote: dto.adminNote } : {}),
         },
       });
-      return ok(row, `Status order ${row.orderNumber} → ${row.status}`);
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException({
-          message: `Order #${id} tidak ditemukan`,
-          error: 'NOT_FOUND',
+      if (soldDelta > 0 && existing.productId !== null) {
+        await tx.shopProduct.update({
+          where: { id: existing.productId },
+          data: { soldCount: { increment: soldDelta } },
+        });
+      } else if (soldDelta < 0 && existing.productId !== null) {
+        // Guard against going negative if soldCount was edited down manually.
+        await tx.shopProduct.updateMany({
+          where: { id: existing.productId, soldCount: { gte: -soldDelta } },
+          data: { soldCount: { decrement: -soldDelta } },
         });
       }
-      throw err;
-    }
+      return updated;
+    });
+    return ok(row, `Status order ${row.orderNumber} → ${row.status}`);
   }
 
   async deleteOrder(id: number): Promise<ResponsePayload<unknown>> {
@@ -562,20 +734,31 @@ export class ShopOrderService {
   /** Insert the order, generating a unique human-readable order number and
    * retrying a few times if the random suffix collides. */
   private async createWithUniqueNumber(
-    data: Omit<Prisma.ShopOrderCreateInput, 'orderNumber' | 'product'> & {
-      productId: number | null;
-    },
+    data: Omit<Prisma.ShopOrderUncheckedCreateInput, 'orderNumber'>,
+    reserveStock: number | null = null,
   ) {
-    const { productId, ...rest } = data;
+    const productId = data.productId ?? null;
     for (let attempt = 0; attempt < 6; attempt++) {
       const orderNumber = this.generateOrderNumber();
       try {
-        return await this.prisma.shopOrder.create({
-          data: {
-            ...rest,
-            orderNumber,
-            ...(productId ? { product: { connect: { id: productId } } } : {}),
-          },
+        return await this.prisma.$transaction(async (tx) => {
+          // Reserve stock atomically. The conditional updateMany only matches
+          // (and decrements) when enough stock remains, so two concurrent
+          // orders can't both succeed and oversell. count === 0 means another
+          // request grabbed the last units between our pre-check and here.
+          if (reserveStock !== null && productId !== null) {
+            const reserved = await tx.shopProduct.updateMany({
+              where: { id: productId, stok: { gte: reserveStock } },
+              data: { stok: { decrement: reserveStock } },
+            });
+            if (reserved.count === 0) {
+              throw new ConflictException({
+                message: 'Stok tidak mencukupi',
+                error: 'CONFLICT',
+              });
+            }
+          }
+          return tx.shopOrder.create({ data: { ...data, orderNumber } });
         });
       } catch (err) {
         if (

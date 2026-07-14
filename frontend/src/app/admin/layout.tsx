@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import useSWR from "swr";
 import {
   Activity,
   BarChart3,
@@ -17,6 +18,8 @@ import {
   Home,
   ImageIcon,
   KeyRound,
+  MessageSquare,
+  MessageSquareQuote,
   Menu,
   Mic,
   Search,
@@ -28,6 +31,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/Spinner";
 
@@ -43,6 +47,7 @@ const NAV: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: Home, group: "Overview", exact: true },
   { href: "/admin/users", label: "Pengguna", icon: Users, group: "Pengguna" },
   { href: "/admin/content/artikel", label: "Artikel", icon: FileText, group: "Konten" },
+  { href: "/admin/serambi", label: "Serambi", icon: MessageSquareQuote, group: "Konten" },
   { href: "/admin/content/doa", label: "Doa", icon: ScrollText, group: "Konten" },
   { href: "/admin/content/topic", label: "Topik", icon: Tag, group: "Konten" },
   { href: "/admin/content/khutbah", label: "Khutbah", icon: Mic, group: "Konten" },
@@ -63,6 +68,7 @@ const NAV: NavItem[] = [
   { href: "/admin/shop/settings", label: "Setting Toko", icon: Settings2, group: "Toko" },
   { href: "/admin/broadcast", label: "Broadcast", icon: Bell, group: "Notifikasi" },
   { href: "/admin/cron", label: "Cron Jobs", icon: Clock, group: "Notifikasi" },
+  { href: "/admin/feedback", label: "Masukan", icon: MessageSquare, group: "Dukungan" },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, group: "Insights" },
   { href: "/admin/analytics/traffic", label: "Traffic Web", icon: BarChart3, group: "Insights" },
   { href: "/admin/analytics/api-traffic", label: "Traffic API", icon: BarChart3, group: "Insights" },
@@ -112,6 +118,19 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Badge counter: number of feedback still with status "baru". Only fetch
+  // once the admin is authenticated; refresh every minute so a new submission
+  // shows up without a manual reload.
+  const isAdmin = !loading && user?.role === "admin";
+  const { data: feedbackStats } = useSWR<{
+    byStatus?: Record<string, number>;
+  }>(isAdmin ? "/admin/feedback/stats" : null, fetcher, {
+    refreshInterval: 60_000,
+  });
+  const feedbackBaru = feedbackStats?.byStatus?.baru ?? 0;
+  const badgeFor = (href: string): number =>
+    href === "/admin/feedback" ? feedbackBaru : 0;
 
   useEffect(() => {
     if (loading) return;
@@ -180,6 +199,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           {items.map((item) => {
             const active = item.href === activeHref;
             const Icon = item.icon;
+            const badge = badgeFor(item.href);
             return (
               <Link
                 key={item.href}
@@ -195,7 +215,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   strokeWidth={active ? 2.5 : 2}
                   className="shrink-0"
                 />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badge > 0 && (
+                  <span
+                    className={`ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none ${
+                      active
+                        ? "bg-white/25 text-white"
+                        : "bg-rose-500 text-white"
+                    }`}
+                  >
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </Link>
             );
           })}

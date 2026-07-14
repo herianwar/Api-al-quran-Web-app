@@ -183,6 +183,14 @@ async function bootstrap(): Promise<void> {
     .addTag('Jadwal Sholat', 'Waktu sholat per kota per hari')
     .addTag('Auth', 'Register, login, refresh, logout (JWT)')
     .addTag('User', 'Profil, bookmark, hafalan + spaced-rep, device tokens')
+    .addTag(
+      'Muslimah',
+      'Asisten Haid & Ibadah: catat haid/nifas/istihadhah, status ibadah, qadha puasa, pengingat puasa sunnah, dashboard',
+    )
+    .addTag(
+      'Daily Ibadah',
+      'Checklist sholat 5 waktu per user per hari (WIB) — sinkron antar-perangkat',
+    )
     .addTag('Admin (role)', 'Endpoint yang butuh JWT + role=admin')
     .addTag('Admin Content', 'CRUD doa & topik')
     .addTag(
@@ -206,6 +214,22 @@ async function bootstrap(): Promise<void> {
     .addTag(
       'Artikel Admin',
       'CRUD artikel & kategori + upload gambar (cover/inline editor)',
+    )
+    .addTag(
+      'Feedback',
+      'Kirim masukan / pengajuan fitur dari app (guest atau login)',
+    )
+    .addTag(
+      'Feedback Admin',
+      'Kelola masukan: list/filter/search, ubah status & catatan internal, stats',
+    )
+    .addTag(
+      'Serambi',
+      'Feed kutipan/renungan admin: baca feed, like, komentar (user login)',
+    )
+    .addTag(
+      'Serambi Admin',
+      'Kelola post Serambi (CRUD + upload) & moderasi komentar',
     )
     .build();
   const document = SwaggerModule.createDocument(app, builtSwaggerConfig);

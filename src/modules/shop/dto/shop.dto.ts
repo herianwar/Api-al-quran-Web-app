@@ -7,6 +7,7 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -63,6 +64,15 @@ export class ProductListQueryDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   featured?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['featured', 'price_asc', 'price_desc'],
+    description:
+      'Urutan hasil. featured = unggulan dulu (default), price_asc/price_desc = harga.',
+  })
+  @IsOptional()
+  @IsIn(['featured', 'price_asc', 'price_desc'])
+  sort?: 'featured' | 'price_asc' | 'price_desc';
 }
 
 export class CreateCategoryDto {
@@ -175,6 +185,35 @@ export class CreateProductDto {
   stok?: number;
 
   @ApiPropertyOptional({
+    description: 'Rating rata-rata 0–5 (boleh diatur manual)',
+    minimum: 0,
+    maximum: 5,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  rating?: number;
+
+  @ApiPropertyOptional({ default: 0, description: 'Jumlah penilai' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  ratingCount?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'Jumlah terjual (auto-naik saat order selesai, bisa diatur manual)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  soldCount?: number;
+
+  @ApiPropertyOptional({
     description: 'Nomor WA override format 62812xxx (digits only)',
   })
   @IsOptional()
@@ -251,6 +290,28 @@ export class UpdateProductDto {
   @IsInt()
   @Min(0)
   stok?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 5 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  rating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  ratingCount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  soldCount?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -563,12 +624,36 @@ export class CreateOrderDto {
   @Max(999)
   quantity?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'ID device anonim (mis. UUID dari aplikasi) untuk melacak order tanpa login. ' +
+      'Diabaikan jika request sudah terautentikasi (order diikat ke userId).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  deviceId?: string;
+
   @ApiProperty({
     description: 'Nilai field dinamis, keyed by field key',
     example: { nama: 'Budi', alamat: 'Jl. Merdeka 1', no_hp: '08123456789' },
   })
   @IsObject()
   fields!: Record<string, unknown>;
+}
+
+/** Query for the customer-facing "pesanan saya" lookup. deviceId identifies an
+ * anonymous device; when the caller is authenticated, their orders are matched
+ * by userId regardless of deviceId. Used by both list and detail endpoints. */
+export class MyOrdersQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'ID device anonim. Wajib diisi jika request tidak terautentikasi.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  deviceId?: string;
 }
 
 export class OrderListQueryDto extends PaginationQueryDto {

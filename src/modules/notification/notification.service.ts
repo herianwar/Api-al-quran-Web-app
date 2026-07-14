@@ -170,6 +170,57 @@ export class NotificationService implements OnModuleInit {
     return this.sendBroadcast(payload);
   }
 
+  /**
+   * Send a single push to an FCM **topic** (e.g. "serambi"). Every device that
+   * subscribed to the topic receives it — including guests — so this is the
+   * cheap way to broadcast without enumerating tokens. Topic sends give no
+   * per-token feedback, so we return the FCM message id (or null when FCM is
+   * unconfigured / send fails). Never throws — callers use it fire-and-forget.
+   */
+  async sendToTopic(
+    topic: string,
+    payload: PushPayload,
+  ): Promise<string | null> {
+    if (!this.messaging) {
+      this.logger.warn(
+        `FCM disabled — would have sent "${payload.title}" to topic ${topic}.`,
+      );
+      return null;
+    }
+    try {
+      const messageId = await this.messaging.send({
+        topic,
+        notification: {
+          title: payload.title,
+          body: payload.body,
+          ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+        },
+        data: payload.data,
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: ANDROID_CHANNEL_ID,
+            icon: 'ic_notification',
+            ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+          },
+        },
+        apns: {
+          payload: { aps: { sound: 'default', 'mutable-content': 1 } },
+          ...(payload.imageUrl
+            ? { fcmOptions: { imageUrl: payload.imageUrl } }
+            : {}),
+        },
+      });
+      this.logger.log(`Sent topic push to "${topic}" (id: ${messageId}).`);
+      return messageId;
+    } catch (err) {
+      this.logger.warn(
+        `FCM topic send to "${topic}" failed: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
   // ─── Internal ───────────────────────────────────────────────────────
 
   private async sendToTokens(

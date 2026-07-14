@@ -38,6 +38,28 @@ export class CronService implements OnApplicationBootstrap {
       },
     );
 
+    // Puasa sunnah besok: 19:00 WIB = 12:00 UTC. Broadcast bila besok hari
+    // puasa sunnah (Senin/Kamis, Ayyamul Bidh, Arafah, dll).
+    await this.queue.add(
+      'puasa-sunnah-besok' as NotificationJobName,
+      {},
+      {
+        repeat: { pattern: '0 12 * * *', tz: 'UTC' },
+        jobId: 'cron:puasa-sunnah-besok',
+      },
+    );
+
+    // Perkiraan haid: 08:00 WIB = 01:00 UTC. Pengingat pribadi bila prediksi
+    // siklus jatuh besok.
+    await this.queue.add(
+      'perkiraan-haid' as NotificationJobName,
+      {},
+      {
+        repeat: { pattern: '0 1 * * *', tz: 'UTC' },
+        jobId: 'cron:perkiraan-haid',
+      },
+    );
+
     // Jadwal sholat warm-up: 25th of every month at 03:00 WIB = 20:00 UTC on the
     // 24th UTC. We run on the 25th of the month (server local) so the next
     // month is already cached before users open the app on day 1. Idempotent —
@@ -74,7 +96,7 @@ export class CronService implements OnApplicationBootstrap {
     );
 
     this.logger.log(
-      'Scheduled repeatable jobs: daily-verse, hafalan-reminder, jadwal-warm, db-snapshot, api-usage-rollup',
+      'Scheduled repeatable jobs: daily-verse, hafalan-reminder, puasa-sunnah-besok, perkiraan-haid, jadwal-warm, db-snapshot, api-usage-rollup',
     );
   }
 

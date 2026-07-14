@@ -45,3 +45,18 @@ export class UpdateGoalDto {
   @Max(30)
   target: number;
 }
+
+export class UpsertKhatamDto {
+  @ApiProperty({ description: 'Tanggal mulai (YYYY-MM-DD)', example: '2026-06-01' })
+  @IsString()
+  @Matches(ISO_DATE, { message: 'mulai harus YYYY-MM-DD' })
+  mulai: string;
+
+  @ApiProperty({
+    description: 'Target tanggal khatam (YYYY-MM-DD)',
+    example: '2026-07-01',
+  })
+  @IsString()
+  @Matches(ISO_DATE, { message: 'targetTanggal harus YYYY-MM-DD' })
+  targetTanggal: string;
+}

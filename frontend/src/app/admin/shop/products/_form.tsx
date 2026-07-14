@@ -23,6 +23,9 @@ type Form = {
   hargaIdr: number;
   hargaCoret: number | "";
   stok: number | "";
+  rating: number | "";
+  ratingCount: number | "";
+  soldCount: number | "";
   waNumber: string;
   isActive: boolean;
   isFeatured: boolean;
@@ -37,6 +40,9 @@ const EMPTY: Form = {
   hargaIdr: 0,
   hargaCoret: "",
   stok: "",
+  rating: "",
+  ratingCount: "",
+  soldCount: "",
   waNumber: "",
   isActive: true,
   isFeatured: false,
@@ -70,6 +76,9 @@ export function ProductForm({ mode, id }: Props) {
         hargaIdr: existing.hargaIdr,
         hargaCoret: existing.hargaCoret ?? "",
         stok: existing.stok ?? "",
+        rating: existing.rating ?? "",
+        ratingCount: existing.ratingCount ?? "",
+        soldCount: existing.soldCount ?? "",
         waNumber: existing.waNumber ?? "",
         isActive: existing.isActive,
         isFeatured: existing.isFeatured,
@@ -96,6 +105,9 @@ export function ProductForm({ mode, id }: Props) {
       };
       if (form.hargaCoret !== "") payload.hargaCoret = Number(form.hargaCoret);
       if (form.stok !== "") payload.stok = Number(form.stok);
+      if (form.rating !== "") payload.rating = Number(form.rating);
+      if (form.ratingCount !== "") payload.ratingCount = Number(form.ratingCount);
+      if (form.soldCount !== "") payload.soldCount = Number(form.soldCount);
       if (form.waNumber) payload.waNumber = form.waNumber;
 
       if (mode === "create") {
@@ -275,6 +287,52 @@ export function ProductForm({ mode, id }: Props) {
                     setForm((f) => ({
                       ...f,
                       stok: e.target.value === "" ? "" : Number(e.target.value),
+                    }))
+                  }
+                  className="input-row tabular-nums"
+                />
+              </Field>
+              <Field label="Rating (0–5, kosongkan = belum ada)">
+                <input
+                  type="number"
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  value={form.rating}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      rating: e.target.value === "" ? "" : Number(e.target.value),
+                    }))
+                  }
+                  className="input-row tabular-nums"
+                />
+              </Field>
+              <Field label="Jumlah penilai">
+                <input
+                  type="number"
+                  min={0}
+                  value={form.ratingCount}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      ratingCount:
+                        e.target.value === "" ? "" : Number(e.target.value),
+                    }))
+                  }
+                  className="input-row tabular-nums"
+                />
+              </Field>
+              <Field label="Jumlah terjual (auto saat order selesai)">
+                <input
+                  type="number"
+                  min={0}
+                  value={form.soldCount}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      soldCount:
+                        e.target.value === "" ? "" : Number(e.target.value),
                     }))
                   }
                   className="input-row tabular-nums"

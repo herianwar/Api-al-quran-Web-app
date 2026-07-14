@@ -1,12 +1,24 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ResponsePayload, ok } from '../../common/dto/api-response';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LogSessionDto, UpdateGoalDto } from './dto/streak.dto';
+import { LogSessionDto, UpdateGoalDto, UpsertKhatamDto } from './dto/streak.dto';
+
+/** Total ayat dalam mushaf Al-Qur'an (standar Madinah). */
+const TOTAL_AYAT = 6236;
 
 /** YYYY-MM-DD in UTC. Use this when the client doesn't supply a tanggal. */
 function todayUTC(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Selisih hari inklusif antara dua YYYY-MM-DD (a<=b). */
+function inclusiveDays(a: string, b: string): number {
+  const [ay, am, ad] = a.split('-').map((s) => parseInt(s, 10));
+  const [by, bm, bd] = b.split('-').map((s) => parseInt(s, 10));
+  const da = Date.UTC(ay, am - 1, ad);
+  const db = Date.UTC(by, bm - 1, bd);
+  return Math.floor((db - da) / 86_400_000) + 1;
 }
 
 /** Move a YYYY-MM-DD back N days. Pure string arithmetic via Date. */
@@ -118,5 +130,76 @@ export class StreakService {
       create: { userId, unit: dto.unit, target: dto.target },
     });
     return ok(goal, 'Target harian diperbarui');
+  }
+
+  // ─── Khatam plan ──────────────────────────────────────────────────────
+
+  /** Hitung progress khatam dari akumulasi ayat dibaca sejak `mulai`. */
+  private async khatamProgress(userId: string, goal: {
+    mulai: string;
+    targetTanggal: string;
+  }) {
+    const sessions = await this.prisma.readingSession.findMany({
+      where: { userId, tanggal: { gte: goal.mulai } },
+      select: { ayatCount: true },
+    });
+    const ayatDibaca = sessions.reduce((s, r) => s + r.ayatCount, 0);
+    const today = todayUTC();
+    const totalHari = Math.max(1, inclusiveDays(goal.mulai, goal.targetTanggal));
+    const hariBerjalan = Math.max(
+      0,
+      Math.min(totalHari, inclusiveDays(goal.mulai, today)),
+    );
+    const sisaHari = Math.max(1, inclusiveDays(today, goal.targetTanggal));
+    const sisaAyat = Math.max(0, TOTAL_AYAT - ayatDibaca);
+    const targetPerHari = Math.ceil(TOTAL_AYAT / totalHari);
+    const targetPerHariSisa = Math.ceil(sisaAyat / sisaHari);
+    const targetSampaiHariIni = targetPerHari * hariBerjalan;
+    return {
+      totalAyat: TOTAL_AYAT,
+      ayatDibaca,
+      sisaAyat,
+      persen: Math.min(100, Math.round((ayatDibaca / TOTAL_AYAT) * 100)),
+      totalHari,
+      hariBerjalan,
+      sisaHari: inclusiveDays(today, goal.targetTanggal) - 1, // hari penuh tersisa
+      targetPerHari,
+      targetPerHariSisa,
+      onTrack: ayatDibaca >= targetSampaiHariIni,
+      selesai: ayatDibaca >= TOTAL_AYAT,
+    };
+  }
+
+  async getKhatam(userId: string): Promise<ResponsePayload<unknown>> {
+    const goal = await this.prisma.khatamGoal.findUnique({ where: { userId } });
+    if (!goal) {
+      return ok(null, 'Belum ada rencana khatam');
+    }
+    const progress = await this.khatamProgress(userId, goal);
+    return ok({ ...goal, ...progress }, 'Progress khatam');
+  }
+
+  async upsertKhatam(
+    userId: string,
+    dto: UpsertKhatamDto,
+  ): Promise<ResponsePayload<unknown>> {
+    if (dto.targetTanggal <= dto.mulai) {
+      throw new BadRequestException({
+        message: 'Target tanggal harus setelah tanggal mulai',
+        error: 'BAD_REQUEST',
+      });
+    }
+    const goal = await this.prisma.khatamGoal.upsert({
+      where: { userId },
+      update: { mulai: dto.mulai, targetTanggal: dto.targetTanggal },
+      create: { userId, mulai: dto.mulai, targetTanggal: dto.targetTanggal },
+    });
+    const progress = await this.khatamProgress(userId, goal);
+    return ok({ ...goal, ...progress }, 'Rencana khatam disimpan');
+  }
+
+  async deleteKhatam(userId: string): Promise<ResponsePayload<unknown>> {
+    await this.prisma.khatamGoal.deleteMany({ where: { userId } });
+    return ok({ deleted: true }, 'Rencana khatam dihapus');
   }
 }

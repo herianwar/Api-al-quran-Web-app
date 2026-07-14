@@ -6,6 +6,10 @@ import {
   Compass,
   Home,
   Library,
+  CalendarHeart,
+  Droplet,
+  Flower2,
+  ListChecks,
   Menu,
   Moon,
   Newspaper,
@@ -79,8 +83,24 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Hafalan",
-    items: [{ href: "/quiz", label: "Quiz Sambung Ayat", icon: Target }],
+    label: "Tilawah & Hafalan",
+    items: [
+      { href: "/tilawah", label: "Target Tilawah & Khatam", icon: Target },
+      { href: "/quiz", label: "Quiz Sambung Ayat", icon: Target },
+    ],
+  },
+  {
+    label: "Muslimah",
+    items: [
+      { href: "/muslimah", label: "Dashboard Muslimah", icon: Flower2 },
+      { href: "/muslimah/haid", label: "Kalender Haid", icon: Droplet },
+      {
+        href: "/muslimah/puasa-sunnah",
+        label: "Pengingat Puasa Sunnah",
+        icon: CalendarHeart,
+      },
+      { href: "/muslimah/amalan", label: "Amalan Harian", icon: ListChecks },
+    ],
   },
   {
     label: "AI",
@@ -215,7 +235,7 @@ export function Navbar() {
               />
             </button>
             {moreOpen && (
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-y-auto overscroll-contain max-h-[calc(100vh-5rem)]">
                 {GROUPS.map((g) => (
                   <div key={g.label} className="py-2 border-b border-slate-100 last:border-b-0">
                     <p className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
