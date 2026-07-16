@@ -53,6 +53,10 @@ export class SerambiService {
   /** Base absolut untuk menjadikan /uploads/... jadi URL penuh di push. */
   private readonly publicBase: string;
 
+  /** Throttle sweep promosi post terjadwal (mirip ArtikelService). */
+  private lastScheduledSweep = 0;
+  private static readonly SCHEDULE_SWEEP_MS = 30_000; // 30s
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
@@ -101,6 +105,56 @@ export class SerambiService {
       data,
       imageUrl: image ?? undefined,
     });
+  }
+
+  /**
+   * Tentukan (status, scheduledAt, justPublished) untuk status target.
+   * - "scheduled" dengan waktu masa depan → tetap terjadwal (belum push).
+   * - "scheduled" tanpa/lampau waktu → langsung tayang.
+   * - "published" → tayang. "draft"/"archived" → apa adanya.
+   */
+  private resolveScheduleState(
+    status: string,
+    scheduledAtRaw: string | null | undefined,
+  ): { status: string; scheduledAt: Date | null; justPublished: boolean } {
+    if (status === 'scheduled') {
+      const when = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+      if (when && when.getTime() > Date.now()) {
+        return { status: 'scheduled', scheduledAt: when, justPublished: false };
+      }
+      return { status: 'published', scheduledAt: null, justPublished: true };
+    }
+    if (status === 'published') {
+      return { status: 'published', scheduledAt: null, justPublished: true };
+    }
+    return { status, scheduledAt: null, justPublished: false };
+  }
+
+  /**
+   * Promosikan post "scheduled" yang waktunya sudah tiba ke "published".
+   * Best-effort, di-throttle 30s, dipanggil dari feed publik (tanpa cron).
+   * createdAt di-refresh ke sekarang supaya post tayang di puncak feed, dan
+   * push notification dikirim sekali per post yang dipromosikan.
+   */
+  async promoteDueScheduled(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastScheduledSweep < SerambiService.SCHEDULE_SWEEP_MS) return;
+    this.lastScheduledSweep = now;
+    try {
+      const due = await this.prisma.serambiPost.findMany({
+        where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
+        select: { id: true, body: true, imageUrl: true },
+      });
+      for (const row of due) {
+        await this.prisma.serambiPost.update({
+          where: { id: row.id },
+          data: { status: 'published', scheduledAt: null, createdAt: new Date() },
+        });
+        void this.notifyPublished(row).catch(() => undefined);
+      }
+    } catch {
+      /* best-effort; sweep berikutnya mencoba lagi */
+    }
   }
 
   // ─── Shape helpers (kontrak app Android) ─────────────────────────────
@@ -159,6 +213,7 @@ export class SerambiService {
     query: PaginationQueryDto,
     userId: string | null,
   ): Promise<ResponsePayload<unknown>> {
+    void this.promoteDueScheduled(); // tayangkan yang jatuh tempo (throttled)
     const where: Prisma.SerambiPostWhereInput = { status: 'published' };
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.serambiPost.count({ where }),
@@ -181,6 +236,7 @@ export class SerambiService {
     id: string,
     userId: string | null,
   ): Promise<ResponsePayload<unknown>> {
+    void this.promoteDueScheduled(); // tayangkan yang jatuh tempo (throttled)
     const row = await this.prisma.serambiPost.findFirst({
       where: { id, status: 'published' },
     });
@@ -337,6 +393,7 @@ export class SerambiService {
     // Kalau admin memilih master penulis, nama & avatar diambil dari master
     // (snapshot ke post) dan menimpa input manual.
     const picked = await this.resolveAuthor(dto.authorId);
+    const sched = this.resolveScheduleState(dto.status ?? 'published', dto.scheduledAt);
     const row = await this.prisma.serambiPost.create({
       data: {
         body: dto.body,
@@ -345,14 +402,16 @@ export class SerambiService {
         authorAvatarUrl:
           picked?.avatarUrl ?? dto.authorAvatarUrl ?? null,
         authorId: picked?.id ?? null,
-        status: dto.status ?? undefined, // default "published"
+        status: sched.status,
+        scheduledAt: sched.scheduledAt,
       },
     });
     // Push topic "serambi" sekali kalau langsung terbit (fire-and-forget).
-    if (row.status === 'published') {
+    // Post terjadwal belum kirim push — nanti saat dipromosikan.
+    if (sched.justPublished) {
       void this.notifyPublished(row).catch(() => undefined);
     }
-    return ok(row, 'Post dibuat');
+    return ok(row, sched.status === 'scheduled' ? 'Post dijadwalkan' : 'Post dibuat');
   }
 
   async adminUpdate(
@@ -362,7 +421,7 @@ export class SerambiService {
     // Ambil status sebelumnya untuk mendeteksi transisi ke published.
     const prev = await this.prisma.serambiPost.findUnique({
       where: { id },
-      select: { status: true },
+      select: { status: true, scheduledAt: true },
     });
     if (!prev) {
       throw new NotFoundException({
@@ -393,12 +452,22 @@ export class SerambiService {
         }
       }
     }
-    if (dto.status !== undefined) data.status = dto.status;
+    // Status / jadwal. Hitung ulang bila status atau scheduledAt diubah.
+    let justPublished = false;
+    if (dto.status !== undefined || dto.scheduledAt !== undefined) {
+      const targetStatus = dto.status ?? prev.status;
+      const sched = this.resolveScheduleState(
+        targetStatus,
+        dto.scheduledAt ?? prev.scheduledAt?.toISOString() ?? undefined,
+      );
+      data.status = sched.status;
+      data.scheduledAt = sched.scheduledAt;
+      // Push SEKALI hanya saat benar-benar transisi non-published → published
+      // (anti-spam). Edit post yang sudah published tidak memicu ulang.
+      justPublished = sched.justPublished && prev.status !== 'published';
+    }
     const row = await this.prisma.serambiPost.update({ where: { id }, data });
-    // Push SEKALI hanya saat benar-benar transisi non-published → published
-    // (mis. draft/archived → published). Edit post yang sudah published tidak
-    // memicu ulang (anti-spam).
-    if (prev.status !== 'published' && row.status === 'published') {
+    if (justPublished) {
       void this.notifyPublished(row).catch(() => undefined);
     }
     return ok(row, 'Post diperbarui');

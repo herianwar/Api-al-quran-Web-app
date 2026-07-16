@@ -521,7 +521,7 @@ export interface KhatamProgress {
 
 // ─── Serambi (feed kutipan/renungan admin) ──────────────────────────────
 
-export type SerambiStatus = "draft" | "published" | "archived";
+export type SerambiStatus = "draft" | "scheduled" | "published" | "archived";
 export type SerambiCommentStatus = "visible" | "hidden";
 
 /** Post Serambi (bentuk admin — raw row dari /admin/serambi/posts). */
@@ -534,6 +534,7 @@ export interface SerambiPost {
   authorId: string | null;
   verified: boolean;
   status: SerambiStatus;
+  scheduledAt: string | null;
   likeCount: number;
   commentCount: number;
   createdAt: string;

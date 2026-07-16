@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 
 const STATUS: Record<string, { label: string; badge: string }> = {
   draft: { label: "Draft", badge: "bg-slate-200 text-slate-700" },
+  scheduled: { label: "Terjadwal", badge: "bg-amber-100 text-amber-700" },
   published: { label: "Published", badge: "bg-emerald-100 text-emerald-700" },
   archived: { label: "Arsip", badge: "bg-rose-100 text-rose-700" },
 };
@@ -36,6 +37,7 @@ const STATUS: Record<string, { label: string; badge: string }> = {
 const STATUS_TABS: { value: string; label: string }[] = [
   { value: "", label: "Semua" },
   { value: "published", label: "Published" },
+  { value: "scheduled", label: "Terjadwal" },
   { value: "draft", label: "Draft" },
   { value: "archived", label: "Arsip" },
 ];
@@ -56,6 +58,15 @@ function StatusBadge({ status }: { status: string }) {
       {s.label}
     </span>
   );
+}
+
+/** ISO → nilai <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") di zona lokal. */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
 }
 
 function relativeTime(iso: string): string {
@@ -296,6 +307,14 @@ export default function AdminSerambiPage() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={p.status} />
+                        {p.status === "scheduled" && p.scheduledAt && (
+                          <span className="mt-1 block text-[10px] text-amber-600">
+                            {new Date(p.scheduledAt).toLocaleString("id-ID", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
@@ -371,7 +390,14 @@ export default function AdminSerambiPage() {
                     <span className="inline-flex items-center gap-1">
                       <MessageCircle size={12} /> {p.commentCount}
                     </span>
-                    <span className="ml-auto">{relativeTime(p.createdAt)}</span>
+                    <span className="ml-auto">
+                      {p.status === "scheduled" && p.scheduledAt
+                        ? `⏰ ${new Date(p.scheduledAt).toLocaleString("id-ID", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}`
+                        : relativeTime(p.createdAt)}
+                    </span>
                   </div>
                 </button>
               </li>
@@ -453,6 +479,9 @@ function PostEditor({
   // "" = tulis manual; selain itu = id master penulis yang dipilih.
   const [authorId, setAuthorId] = useState<string>(post?.authorId ?? "");
   const [status, setStatus] = useState<SerambiStatus>(post?.status ?? "draft");
+  const [scheduledAt, setScheduledAt] = useState<string>(
+    post?.scheduledAt ? toLocalInput(post.scheduledAt) : "",
+  );
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -520,6 +549,10 @@ function PostEditor({
       setErr("Isi post tidak boleh kosong");
       return;
     }
+    if (finalStatus === "scheduled" && !scheduledAt) {
+      setErr("Pilih waktu tayang untuk post terjadwal");
+      return;
+    }
     if (saving) return;
     setSaving(true);
     setErr(null);
@@ -532,6 +565,10 @@ function PostEditor({
       authorName: authorName.trim() || DEFAULT_AUTHOR,
       authorAvatarUrl: authorAvatarUrl ?? "",
       status: finalStatus,
+      // Kirim waktu tayang (ISO) hanya saat terjadwal; status lain membersihkan.
+      ...(finalStatus === "scheduled" && scheduledAt
+        ? { scheduledAt: new Date(scheduledAt).toISOString() }
+        : {}),
     };
     try {
       if (isEdit) {
@@ -684,11 +721,30 @@ function PostEditor({
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none focus:border-emerald-500"
               >
                 <option value="draft">Draft (tersembunyi)</option>
+                <option value="scheduled">Terjadwal (tayang otomatis)</option>
                 <option value="published">Published (tampil publik)</option>
                 <option value="archived">Arsip</option>
               </select>
             </div>
           </div>
+
+          {status === "scheduled" && (
+            <div className="mt-4">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Waktu tayang
+              </label>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-500"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                Post tayang otomatis di feed saat waktu ini tiba (dicek berkala
+                dari kunjungan feed). Waktu lampau = langsung tayang.
+              </p>
+            </div>
+          )}
 
           {isManual ? (
             <>

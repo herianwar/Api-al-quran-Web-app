@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsIn,
   IsOptional,
   IsString,
@@ -11,7 +12,12 @@ import {
 import { PaginationQueryDto } from '../../../common/dto/pagination';
 
 /** Status sebuah post Serambi. */
-export const SERAMBI_POST_STATUS = ['draft', 'published', 'archived'] as const;
+export const SERAMBI_POST_STATUS = [
+  'draft',
+  'scheduled',
+  'published',
+  'archived',
+] as const;
 
 /** Status moderasi sebuah komentar. */
 export const SERAMBI_COMMENT_STATUS = ['visible', 'hidden'] as const;
@@ -90,6 +96,15 @@ export class CreateSerambiPostDto {
     message: 'Status tidak valid',
   })
   status?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Waktu tayang (ISO 8601) untuk status "scheduled". Bila kosong/lampau, langsung tayang.',
+    example: '2026-07-20T08:00:00.000Z',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Waktu tayang tidak valid' })
+  scheduledAt?: string;
 }
 
 /** Body PATCH /admin/serambi/posts/:id — semua field opsional. */
@@ -138,6 +153,14 @@ export class UpdateSerambiPostDto {
     message: 'Status tidak valid',
   })
   status?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Waktu tayang (ISO 8601) untuk status "scheduled". Bila kosong/lampau, langsung tayang.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'Waktu tayang tidak valid' })
+  scheduledAt?: string;
 }
 
 /** Query GET /admin/serambi/posts. */

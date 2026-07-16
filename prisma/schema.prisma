@@ -1451,8 +1451,11 @@ model SerambiPost {
   authorId        String?
   /// Badge centang; post admin selalu true.
   verified        Boolean  @default(true)
-  /// "draft" | "published" | "archived".
+  /// "draft" | "scheduled" | "published" | "archived".
   status          String   @default("published")
+  /// Waktu tayang terjadwal (status "scheduled"); dipromosikan ke published
+  /// saat waktunya tiba. NULL untuk non-scheduled.
+  scheduledAt     DateTime?
   /// Counter denormalisasi (di-update transaksional).
   likeCount       Int      @default(0)
   commentCount    Int      @default(0)
@@ -1464,6 +1467,7 @@ model SerambiPost {
   comments SerambiComment[]
 
   @@index([status, createdAt])
+  @@index([status, scheduledAt])
   @@index([authorId])
   @@map("serambi_posts")
 }
