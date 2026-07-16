@@ -142,11 +142,28 @@ export class UserController {
   }
 
   @Delete('devices/:token')
-  @ApiOperation({ summary: 'Unregister device (panggil saat logout/uninstall)' })
+  @ApiOperation({
+    summary: 'Unregister device (panggil saat logout/uninstall)',
+    description:
+      'Idempotent: selalu 200 { deleted: boolean }, tidak 404 bila token tidak ada. Scoped ke user (tidak bisa hapus token milik user lain).',
+  })
   unregisterDevice(
     @CurrentUser('userId') userId: string,
     @Param('token') token: string,
   ) {
     return this.userService.unregisterDevice(userId, token);
+  }
+
+  @Post('devices/:token/detach')
+  @ApiOperation({
+    summary: 'Lepas device dari akun saat logout (tetap terdaftar anonim)',
+    description:
+      'Set userId → null (bukan hapus) agar device tetap menerima push broadcast tapi tidak lagi push personal akun lama. Idempotent: selalu 200 { detached: boolean }, tidak 404. Scoped ke user.',
+  })
+  detachDevice(
+    @CurrentUser('userId') userId: string,
+    @Param('token') token: string,
+  ) {
+    return this.userService.detachDevice(userId, token);
   }
 }

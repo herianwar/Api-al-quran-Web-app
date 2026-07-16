@@ -317,6 +317,10 @@ export class UserService {
     return ok(row, 'Device terdaftar untuk push notification');
   }
 
+  /** Unregister a device for the logged-in user. Idempotent: called during
+   *  logout (best-effort) so an absent token is not an error — always 200 with
+   *  `deleted` reflecting whether a row was removed. Still scoped by
+   *  (token, userId) so user A can never delete user B's token. */
   async unregisterDevice(
     userId: string,
     token: string,
@@ -324,13 +328,28 @@ export class UserService {
     const result = await this.prisma.deviceToken.deleteMany({
       where: { token, userId },
     });
-    if (result.count === 0) {
-      throw new NotFoundException({
-        message: 'Device token tidak ditemukan',
-        error: 'NOT_FOUND',
-      });
-    }
-    return ok({ deleted: true }, 'Device dihapus dari daftar push');
+    return ok(
+      { deleted: result.count > 0 },
+      'Device dihapus dari daftar push',
+    );
+  }
+
+  /** Detach a device from the logged-in user without deleting it: sets
+   *  userId → null so the device keeps receiving broadcast push (which
+   *  enumerates device_tokens) but no longer gets the old account's personal
+   *  push. Scoped by (token, userId); idempotent — always 200, no 404. */
+  async detachDevice(
+    userId: string,
+    token: string,
+  ): Promise<ResponsePayload<unknown>> {
+    const result = await this.prisma.deviceToken.updateMany({
+      where: { token, userId },
+      data: { userId: null },
+    });
+    return ok(
+      { detached: result.count > 0 },
+      'Device dilepas dari akun (tetap terdaftar anonim)',
+    );
   }
 
   /** Public unregister (no auth): delete a token regardless of owner. Knowing
