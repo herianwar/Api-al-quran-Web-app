@@ -1,6 +1,14 @@
 "use client";
 
-import { Save, ShoppingBag, Trash2, Upload, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Save,
+  ShoppingBag,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -66,6 +74,15 @@ export function ProductForm({ mode, id }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Create mode: gambar dipilih dulu (di-stage), lalu di-upload setelah produk
+  // dibuat (butuh product id). Edit mode meng-upload langsung.
+  const [staged, setStaged] = useState<{ file: File; preview: string }[]>([]);
+
+  // Bebaskan object URL preview saat unmount agar tak bocor memori.
+  useEffect(() => {
+    return () => staged.forEach((s) => URL.revokeObjectURL(s.preview));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (mode === "edit" && existing && !hydrated) {
@@ -116,7 +133,22 @@ export function ProductForm({ mode, id }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        router.push(`/admin/shop/products/${res.data.id}`);
+        // Upload foto yang sudah di-stage ke produk baru (berurutan agar
+        // urutan tampil sesuai urutan pilih). Kegagalan foto tidak membatalkan
+        // produk yang sudah dibuat — user diarahkan ke edit untuk melanjutkan.
+        const newId = res.data.id;
+        if (staged.length > 0) {
+          try {
+            for (const s of staged) await uploadOne(newId, s.file);
+            staged.forEach((s) => URL.revokeObjectURL(s.preview));
+          } catch (e) {
+            setErr(
+              (e instanceof Error ? e.message : "Sebagian foto gagal diupload") +
+                " — produk sudah dibuat, lanjutkan upload di halaman edit.",
+            );
+          }
+        }
+        router.push(`/admin/shop/products/${newId}`);
       } else {
         await apiFetch(`/admin/shop/products/${id}`, {
           method: "PUT",
@@ -132,29 +164,93 @@ export function ProductForm({ mode, id }: Props) {
     }
   }
 
-  async function uploadImage(file: File) {
-    if (!id) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const access = tokenStore.access;
-      const res = await fetch(`${API_URL}/admin/shop/products/${id}/images`, {
+  /** Upload satu file ke produk tertentu; lempar error agar bisa ditangani. */
+  async function uploadOne(productId: number, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const access = tokenStore.access;
+    const res = await fetch(
+      `${API_URL}/admin/shop/products/${productId}/images`,
+      {
         method: "POST",
         headers: access ? { Authorization: `Bearer ${access}` } : undefined,
         body: fd,
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message ?? `HTTP ${res.status}`);
-      }
+      },
+    );
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message ?? `HTTP ${res.status}`);
+    }
+  }
+
+  /** Edit mode: upload beberapa file sekaligus (berurutan) lalu refetch. */
+  async function uploadFiles(files: FileList | File[]) {
+    if (!id) return;
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      for (const f of list) await uploadOne(id, f);
       await refetchProduct();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Upload gagal");
     } finally {
       setBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  /** Create mode: tampung file + preview lokal; upload saat produk disimpan. */
+  function stageFiles(files: FileList | File[]) {
+    const added = Array.from(files).map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setStaged((s) => [...s, ...added]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function unstage(index: number) {
+    setStaged((s) => {
+      const target = s[index];
+      if (target) URL.revokeObjectURL(target.preview);
+      return s.filter((_, i) => i !== index);
+    });
+  }
+
+  /** Create mode: geser urutan foto ter-stage (urutan = urutan upload nanti). */
+  function moveStaged(index: number, dir: -1 | 1) {
+    setStaged((s) => {
+      const to = index + dir;
+      if (to < 0 || to >= s.length) return s;
+      const next = [...s];
+      [next[index], next[to]] = [next[to], next[index]];
+      return next;
+    });
+  }
+
+  /** Edit mode: geser urutan gambar (kiri/kanan) via endpoint reorder. */
+  async function moveImage(index: number, dir: -1 | 1) {
+    if (!id || !existing?.images) return;
+    const imgs = [...existing.images];
+    const to = index + dir;
+    if (to < 0 || to >= imgs.length) return;
+    [imgs[index], imgs[to]] = [imgs[to], imgs[index]];
+    const imageIds = imgs.map((i) => i.id);
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(`/admin/shop/products/${id}/images/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageIds }),
+      });
+      await refetchProduct();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Gagal mengurutkan gambar");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -417,56 +513,73 @@ export function ProductForm({ mode, id }: Props) {
             </button>
           </div>
 
-          {/* Image management — only after product exists */}
-          {mode === "edit" && id && (
-            <div className="card p-5">
-              <h3 className="font-semibold text-slate-900 mb-3 text-sm">
-                Gambar
-              </h3>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                {existing?.images && existing.images.length > 0 ? (
-                  existing.images.map((img) => (
-                    <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={resolveImage(img.url, API_URL)}
-                        alt={img.alt ?? ""}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        onClick={() => removeImage(img.id)}
-                        className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
-                        aria-label="Hapus gambar"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
+          {/* Gambar — tersedia di create (staged) & edit (langsung) */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-slate-900 mb-1 text-sm">Gambar</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Gambar pertama jadi foto utama. Bisa pilih beberapa sekaligus.
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {mode === "create"
+                ? staged.map((s, i) => (
+                    <ImageThumb
+                      key={s.preview}
+                      src={s.preview}
+                      primary={i === 0}
+                      canPrev={i > 0}
+                      canNext={i < staged.length - 1}
+                      onPrev={() => moveStaged(i, -1)}
+                      onNext={() => moveStaged(i, 1)}
+                      onRemove={() => unstage(i)}
+                    />
                   ))
-                ) : (
-                  <div className="col-span-3 aspect-video rounded-lg bg-slate-50 grid place-items-center text-slate-300">
-                    <ShoppingBag size={28} />
-                  </div>
-                )}
-              </div>
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-emerald-100">
-                <Upload size={14} />
-                Upload gambar
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void uploadImage(f);
-                  }}
-                />
-              </label>
-              <p className="text-xs text-slate-500 mt-2">
-                jpg / png / webp · maks 5MB
-              </p>
+                : existing?.images?.map((img, i) => (
+                    <ImageThumb
+                      key={img.id}
+                      src={resolveImage(img.url, API_URL)}
+                      alt={img.alt ?? ""}
+                      primary={i === 0}
+                      canPrev={i > 0}
+                      canNext={i < (existing.images?.length ?? 0) - 1}
+                      onPrev={() => moveImage(i, -1)}
+                      onNext={() => moveImage(i, 1)}
+                      onRemove={() => removeImage(img.id)}
+                    />
+                  ))}
+
+              {(mode === "create" ? staged.length : existing?.images?.length ?? 0) ===
+                0 && (
+                <div className="col-span-3 aspect-video rounded-lg bg-slate-50 grid place-items-center text-slate-300">
+                  <ShoppingBag size={28} />
+                </div>
+              )}
             </div>
-          )}
+
+            <label className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-emerald-100">
+              <Upload size={14} />
+              {mode === "create" ? "Pilih foto" : "Upload gambar"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  if (mode === "create") stageFiles(files);
+                  else void uploadFiles(files);
+                }}
+              />
+            </label>
+            <p className="text-xs text-slate-500 mt-2">
+              jpg / png / webp · maks 5MB · otomatis dioptimalkan ke WebP
+              {mode === "create" && staged.length > 0 && (
+                <> · {staged.length} foto akan diupload saat disimpan</>
+              )}
+            </p>
+          </div>
         </div>
       </div>
       <style jsx>{`
@@ -503,5 +616,69 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/** Thumbnail gambar dengan tombol geser urutan, badge "Utama", dan hapus. */
+function ImageThumb({
+  src,
+  alt = "",
+  primary,
+  canPrev,
+  canNext,
+  onPrev,
+  onNext,
+  onRemove,
+}: {
+  src: string;
+  alt?: string;
+  primary: boolean;
+  canPrev: boolean;
+  canNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 group">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="w-full h-full object-cover" />
+
+      {primary && (
+        <span className="absolute top-1 left-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+          Utama
+        </span>
+      )}
+
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute top-1 right-1 bg-rose-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+        aria-label="Hapus gambar"
+      >
+        <X size={12} />
+      </button>
+
+      <div className="absolute inset-x-0 bottom-0 flex justify-between p-1 opacity-0 group-hover:opacity-100 transition">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={!canPrev}
+          aria-label="Geser ke kiri"
+          className="grid h-6 w-6 place-items-center rounded bg-slate-900/60 text-white disabled:opacity-0"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!canNext}
+          aria-label="Geser ke kanan"
+          className="grid h-6 w-6 place-items-center rounded bg-slate-900/60 text-white disabled:opacity-0"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
   );
 }
