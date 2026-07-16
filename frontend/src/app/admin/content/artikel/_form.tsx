@@ -16,7 +16,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { API_URL, apiFetch, fetcher, tokenStore } from "@/lib/api";
-import type { Artikel, ArtikelKategori, ArtikelStatus, ArtikelTag } from "@/lib/types";
+import type {
+  Artikel,
+  ArtikelKategori,
+  ArtikelStatus,
+  ArtikelTag,
+  SerambiAuthor,
+} from "@/lib/types";
 import { ErrorBox, Spinner } from "@/components/Spinner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { TiptapEditor } from "@/components/TiptapEditor";
@@ -34,6 +40,7 @@ type Form = {
   coverUrl: string;
   coverAlt: string;
   penulis: string;
+  authorId: string; // "" = tulis manual; selain itu id master penulis
   status: ArtikelStatus;
   scheduledAt: string; // datetime-local value
   isFeatured: boolean;
@@ -52,6 +59,7 @@ const EMPTY: Form = {
   coverUrl: "",
   coverAlt: "",
   penulis: "",
+  authorId: "",
   status: "draft",
   scheduledAt: "",
   isFeatured: false,
@@ -171,6 +179,11 @@ export function ArtikelForm({ mode, id }: Props) {
     fetcher,
   );
   const { data: allTags } = useSWR<ArtikelTag[]>("/admin/artikel/tags", fetcher);
+  // Master penulis bersama dengan Serambi.
+  const { data: authors } = useSWR<SerambiAuthor[]>(
+    "/admin/serambi/authors?activeOnly=true",
+    fetcher,
+  );
   const { data: existing, mutate: refetch } = useSWR<Artikel>(
     mode === "edit" && id ? `/admin/artikel/${id}` : null,
     fetcher,
@@ -203,6 +216,7 @@ export function ArtikelForm({ mode, id }: Props) {
         coverUrl: existing.coverUrl ?? "",
         coverAlt: existing.coverAlt ?? "",
         penulis: existing.penulis ?? "",
+        authorId: existing.authorId ?? "",
         status: existing.status,
         scheduledAt: toLocalInput(existing.scheduledAt),
         isFeatured: existing.isFeatured,
@@ -241,6 +255,15 @@ export function ArtikelForm({ mode, id }: Props) {
     }));
   }
 
+  // Pilih master penulis → salin nama ke `penulis`. "" = tulis manual.
+  function pickAuthor(authorId: string) {
+    setForm((f) => {
+      if (authorId === "") return { ...f, authorId: "" };
+      const a = authors?.find((x) => x.id === authorId);
+      return { ...f, authorId, penulis: a ? a.name : f.penulis };
+    });
+  }
+
   const buildPayload = useCallback(() => {
     const tags = form.tags
       .split(",")
@@ -254,6 +277,9 @@ export function ArtikelForm({ mode, id }: Props) {
       coverUrl: form.coverUrl || undefined,
       coverAlt: form.coverAlt || undefined,
       penulis: form.penulis || undefined,
+      // "" = tulis manual / lepas referensi; selain itu backend menyalin nama
+      // dari master penulis ke `penulis`.
+      authorId: form.authorId,
       status: form.status,
       isFeatured: form.isFeatured,
       tags,
@@ -678,14 +704,39 @@ export function ArtikelForm({ mode, id }: Props) {
               </select>
             </Field>
             <Field label="Penulis">
-              <input
-                value={form.penulis}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, penulis: e.target.value }))
-                }
+              <select
+                value={form.authorId}
+                onChange={(e) => pickAuthor(e.target.value)}
                 className="rte-input"
-                placeholder="Nama penulis"
-              />
+              >
+                <option value="">✍️ Tulis manual…</option>
+                {authors?.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              {form.authorId === "" ? (
+                <input
+                  value={form.penulis}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, penulis: e.target.value }))
+                  }
+                  className="rte-input mt-2"
+                  placeholder="Nama penulis"
+                />
+              ) : (
+                <p className="mt-1 text-xs text-slate-500">
+                  Dari master penulis Serambi. Kelola di{" "}
+                  <Link
+                    href="/admin/serambi/authors"
+                    className="text-emerald-700 hover:underline"
+                  >
+                    Penulis
+                  </Link>
+                  .
+                </p>
+              )}
             </Field>
             <Field label="Tag (pisahkan dengan koma)">
               <input

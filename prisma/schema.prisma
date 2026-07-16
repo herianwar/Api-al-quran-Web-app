@@ -1205,16 +1205,22 @@ model Artikel {
   /// URL gambar Open Graph khusus; fallback ke coverUrl bila kosong.
   ogImage         String?
   categoryId  Int?
+  /// Referensi opsional ke master penulis bersama (dipakai juga oleh Serambi).
+  /// Saat dipilih, `penulis` diisi snapshot nama. SetNull agar hapus penulis
+  /// tidak menghapus artikel (nama snapshot tetap tersimpan).
+  authorId    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   category ArtikelKategori? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author   SerambiAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([categoryId])
   @@index([isFeatured])
   @@index([publishedAt])
   @@index([scheduledAt])
+  @@index([authorId])
   @@map("artikel")
 }
 
@@ -1475,7 +1481,8 @@ model SerambiAuthor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  posts SerambiPost[]
+  posts   SerambiPost[]
+  artikel Artikel[]
 
   @@index([active, name])
   @@map("serambi_authors")

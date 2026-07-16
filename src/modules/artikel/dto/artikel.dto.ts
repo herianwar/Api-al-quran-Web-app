@@ -98,6 +98,14 @@ export class CreateArtikelDto {
   @MaxLength(120)
   penulis?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'ID master penulis (bersama dengan Serambi). Bila diisi, `penulis` diambil otomatis dari nama master.',
+  })
+  @IsOptional()
+  @IsString()
+  authorId?: string;
+
   @ApiPropertyOptional({ enum: ARTIKEL_STATUSES, default: 'draft' })
   @IsOptional()
   @IsIn(ARTIKEL_STATUSES as unknown as string[])
@@ -196,6 +204,14 @@ export class UpdateArtikelDto {
   @IsString()
   @MaxLength(120)
   penulis?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "ID master penulis (bersama Serambi). Bila diisi, `penulis` disalin dari nama master. Kirim '' untuk melepas referensi.",
+  })
+  @IsOptional()
+  @IsString()
+  authorId?: string;
 
   @ApiPropertyOptional({ enum: ARTIKEL_STATUSES })
   @IsOptional()

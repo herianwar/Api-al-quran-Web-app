@@ -268,6 +268,24 @@ export class ArtikelService {
     }
   }
 
+  /** Cari master penulis bersama (SerambiAuthor) by id; 400 kalau tak ada. */
+  private async resolveAuthor(
+    authorId?: string,
+  ): Promise<{ id: string; name: string } | null> {
+    if (!authorId) return null;
+    const author = await this.prisma.serambiAuthor.findUnique({
+      where: { id: authorId },
+      select: { id: true, name: true },
+    });
+    if (!author) {
+      throw new BadRequestException({
+        message: `Penulis #${authorId} tidak ditemukan`,
+        error: 'BAD_REQUEST',
+      });
+    }
+    return author;
+  }
+
   // ─── Artikel: list ───────────────────────────────────────────────────
 
   /** @param publicOnly when true, force status=published (ignores ?status). */
@@ -442,6 +460,9 @@ export class ArtikelService {
     const pub = this.resolvePublishState(dto.status ?? 'draft', dto.scheduledAt, null);
     const slug = await this.uniqueSlug(dto.slug);
 
+    // Master penulis bersama: bila dipilih, nama disnapshot ke `penulis`.
+    const picked = await this.resolveAuthor(dto.authorId);
+
     try {
       const row = await this.prisma.artikel.create({
         data: {
@@ -451,7 +472,8 @@ export class ArtikelService {
           konten,
           coverUrl: dto.coverUrl,
           coverAlt: dto.coverAlt,
-          penulis: dto.penulis,
+          penulis: picked?.name ?? dto.penulis,
+          authorId: picked?.id ?? null,
           status: pub.status,
           isFeatured: dto.isFeatured ?? false,
           tags: normalizeTags(dto.tags),
@@ -493,6 +515,19 @@ export class ArtikelService {
     if (dto.coverUrl !== undefined) data.coverUrl = dto.coverUrl || null;
     if (dto.coverAlt !== undefined) data.coverAlt = dto.coverAlt || null;
     if (dto.penulis !== undefined) data.penulis = dto.penulis || null;
+    // authorId: non-kosong → pilih master (salin nama ke `penulis`);
+    // '' → lepas referensi tanpa mengubah nama yang sudah tersimpan.
+    if (dto.authorId !== undefined) {
+      if (dto.authorId === '') {
+        data.author = { disconnect: true };
+      } else {
+        const picked = await this.resolveAuthor(dto.authorId);
+        if (picked) {
+          data.author = { connect: { id: picked.id } };
+          data.penulis = picked.name;
+        }
+      }
+    }
     if (dto.isFeatured !== undefined) data.isFeatured = dto.isFeatured;
     if (dto.tags !== undefined) data.tags = normalizeTags(dto.tags);
     if (dto.metaTitle !== undefined) data.metaTitle = dto.metaTitle || null;

@@ -154,6 +154,7 @@ export interface ArtikelListItem {
 export interface Artikel extends ArtikelListItem {
   konten: string;
   categoryId?: number | null;
+  authorId?: string | null;
   metaTitle?: string | null;
   metaDescription?: string | null;
   ogImage?: string | null;
