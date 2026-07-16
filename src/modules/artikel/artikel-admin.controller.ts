@@ -28,6 +28,7 @@ import { extname } from 'path';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtOrAdminKeyGuard } from '../../common/guards/jwt-or-admin-key.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { processImageToWebp } from '../../common/util/image';
 import { ArtikelService, ARTIKEL_UPLOAD_DIR } from './artikel.service';
 import {
   BulkArtikelDto,
@@ -124,17 +125,22 @@ export class ArtikelAdminController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Upload gambar (cover/inline editor). jpg/png/webp/gif, maks 8MB, field "file". Return { url }.',
+      'Upload gambar (cover/inline editor). jpg/png/webp/gif, maks 8MB, field "file". Otomatis dioptimalkan → WebP (resize maks 1600px, kualitas 80). Return { url }.',
   })
   @UseInterceptors(FileInterceptor('file', artikelUploadMulter))
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException({
         message: 'File tidak ditemukan di field "file"',
         error: 'BAD_REQUEST',
       });
     }
-    return this.service.registerUpload(file.filename);
+    const { filename } = await processImageToWebp(
+      ARTIKEL_UPLOAD_DIR,
+      file.filename,
+      { maxWidth: 1600 },
+    );
+    return this.service.registerUpload(filename);
   }
 
   // ─── Tags & bulk (static routes — declared before ':id') ─────────────

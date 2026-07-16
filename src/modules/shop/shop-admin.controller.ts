@@ -49,6 +49,7 @@ import {
   UpdateSettingDto,
 } from './dto/shop.dto';
 import { ShopOrderService } from './shop-order.service';
+import { processImageToWebp } from '../../common/util/image';
 import { SHOP_UPLOAD_DIR, ShopService } from './shop.service';
 
 /** Allowed image MIME types for product/banner uploads. */
@@ -195,7 +196,8 @@ export class ShopAdminController {
   @Post('products/:id/images')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Upload product image (jpg/png/webp, max 5MB, field name "file")',
+    summary:
+      'Upload product image (jpg/png/webp, max 5MB, field "file"). Auto-optimized → WebP (resize max 1200px, quality 80).',
   })
   @UseInterceptors(FileInterceptor('file', shopUploadMulter))
   async uploadImage(
@@ -209,11 +211,12 @@ export class ShopAdminController {
         error: 'BAD_REQUEST',
       });
     }
-    return this.shop.addProductImage(
-      id,
-      { filename: file.filename, size: file.size },
-      alt,
+    const { filename, size } = await processImageToWebp(
+      SHOP_UPLOAD_DIR,
+      file.filename,
+      { maxWidth: 1200 },
     );
+    return this.shop.addProductImage(id, { filename, size }, alt);
   }
 
   @Delete('images/:imageId')
@@ -258,7 +261,7 @@ export class ShopAdminController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Upload/replace banner image (jpg/png/webp, max 5MB, field name "file")',
+      'Upload/replace banner image (jpg/png/webp, max 5MB, field "file"). Auto-optimized → WebP (resize max 1600px, quality 80).',
   })
   @UseInterceptors(FileInterceptor('file', shopUploadMulter))
   async uploadBannerImage(
@@ -271,7 +274,12 @@ export class ShopAdminController {
         error: 'BAD_REQUEST',
       });
     }
-    return this.shop.setBannerImage(id, { filename: file.filename });
+    const { filename } = await processImageToWebp(
+      SHOP_UPLOAD_DIR,
+      file.filename,
+      { maxWidth: 1600 },
+    );
+    return this.shop.setBannerImage(id, { filename });
   }
 
   @Put('banners/:id')

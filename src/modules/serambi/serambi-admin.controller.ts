@@ -34,6 +34,7 @@ import {
   UpdateCommentStatusDto,
   UpdateSerambiPostDto,
 } from './dto/serambi.dto';
+import { processImageToWebp } from '../../common/util/image';
 import { SERAMBI_UPLOAD_DIR, SerambiService } from './serambi.service';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -93,17 +94,22 @@ export class SerambiAdminController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary:
-      'Upload gambar post. jpg/png/webp/gif, maks 8MB, field "file". Return { url }.',
+      'Upload gambar post. jpg/png/webp/gif, maks 8MB, field "file". Otomatis dioptimalkan → WebP (resize maks 1280px, kualitas 80). Return { url }.',
   })
   @UseInterceptors(FileInterceptor('file', serambiUploadMulter))
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException({
         message: 'File tidak ditemukan di field "file"',
         error: 'BAD_REQUEST',
       });
     }
-    return this.service.registerUpload(file.filename);
+    const { filename } = await processImageToWebp(
+      SERAMBI_UPLOAD_DIR,
+      file.filename,
+      { maxWidth: 1280 },
+    );
+    return this.service.registerUpload(filename);
   }
 
   // ─── Moderasi komentar (static routes sebelum posts/:id) ─────────────
