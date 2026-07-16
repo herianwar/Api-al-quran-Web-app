@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { join } from 'path';
@@ -11,10 +16,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import {
+  AdminAuthorListQueryDto,
   AdminCommentListQueryDto,
   AdminPostListQueryDto,
   CreateCommentDto,
+  CreateSerambiAuthorDto,
   CreateSerambiPostDto,
+  UpdateSerambiAuthorDto,
   UpdateSerambiPostDto,
 } from './dto/serambi.dto';
 
@@ -326,12 +334,17 @@ export class SerambiService {
   async adminCreate(
     dto: CreateSerambiPostDto,
   ): Promise<ResponsePayload<unknown>> {
+    // Kalau admin memilih master penulis, nama & avatar diambil dari master
+    // (snapshot ke post) dan menimpa input manual.
+    const picked = await this.resolveAuthor(dto.authorId);
     const row = await this.prisma.serambiPost.create({
       data: {
         body: dto.body,
         imageUrl: dto.imageUrl ?? null,
-        authorName: dto.authorName ?? undefined, // default "Rumah Qur'an"
-        authorAvatarUrl: dto.authorAvatarUrl ?? null,
+        authorName: picked?.name ?? dto.authorName ?? undefined, // default "Rumah Qur'an"
+        authorAvatarUrl:
+          picked?.avatarUrl ?? dto.authorAvatarUrl ?? null,
+        authorId: picked?.id ?? null,
         status: dto.status ?? undefined, // default "published"
       },
     });
@@ -366,6 +379,20 @@ export class SerambiService {
     if (dto.authorAvatarUrl !== undefined) {
       data.authorAvatarUrl = dto.authorAvatarUrl || null;
     }
+    // authorId: nilai non-kosong → pilih master (salin nama+avatar snapshot);
+    // '' → lepas referensi tanpa mengubah snapshot nama/avatar yang ada.
+    if (dto.authorId !== undefined) {
+      if (dto.authorId === '') {
+        data.author = { disconnect: true };
+      } else {
+        const picked = await this.resolveAuthor(dto.authorId);
+        if (picked) {
+          data.author = { connect: { id: picked.id } };
+          data.authorName = picked.name;
+          data.authorAvatarUrl = picked.avatarUrl ?? null;
+        }
+      }
+    }
     if (dto.status !== undefined) data.status = dto.status;
     const row = await this.prisma.serambiPost.update({ where: { id }, data });
     // Push SEKALI hanya saat benar-benar transisi non-published → published
@@ -387,6 +414,114 @@ export class SerambiService {
   /** Register gambar hasil upload → URL publik. */
   registerUpload(filename: string): ResponsePayload<{ url: string }> {
     return ok({ url: `/uploads/serambi/${filename}` }, 'Gambar diupload');
+  }
+
+  // ─── Master penulis ────────────────────────────────────────────────────
+
+  /** Cari master penulis by id; lempar 404 kalau id diberi tapi tidak ada. */
+  private async resolveAuthor(
+    authorId?: string,
+  ): Promise<{ id: string; name: string; avatarUrl: string | null } | null> {
+    if (!authorId) return null;
+    const author = await this.prisma.serambiAuthor.findUnique({
+      where: { id: authorId },
+      select: { id: true, name: true, avatarUrl: true },
+    });
+    if (!author) {
+      throw new BadRequestException({
+        message: `Penulis #${authorId} tidak ditemukan`,
+        error: 'BAD_REQUEST',
+      });
+    }
+    return author;
+  }
+
+  async adminListAuthors(
+    query: AdminAuthorListQueryDto,
+  ): Promise<ResponsePayload<unknown>> {
+    const q = query.q?.trim();
+    const where: Prisma.SerambiAuthorWhereInput = {
+      ...(query.activeOnly ? { active: true } : {}),
+      ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
+    };
+    const rows = await this.prisma.serambiAuthor.findMany({
+      where,
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+      include: { _count: { select: { posts: true } } },
+    });
+    return ok(rows, 'Daftar penulis Serambi', { total: rows.length });
+  }
+
+  async adminCreateAuthor(
+    dto: CreateSerambiAuthorDto,
+  ): Promise<ResponsePayload<unknown>> {
+    try {
+      const row = await this.prisma.serambiAuthor.create({
+        data: { name: dto.name, avatarUrl: dto.avatarUrl ?? null },
+      });
+      return ok(row, 'Penulis dibuat');
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          message: 'Nama penulis sudah ada',
+          error: 'CONFLICT',
+        });
+      }
+      throw err;
+    }
+  }
+
+  async adminUpdateAuthor(
+    id: string,
+    dto: UpdateSerambiAuthorDto,
+  ): Promise<ResponsePayload<unknown>> {
+    await this.ensureAuthorExists(id);
+    const data: Prisma.SerambiAuthorUpdateInput = {};
+    if (dto.name !== undefined && dto.name !== '') data.name = dto.name;
+    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl || null;
+    if (dto.active !== undefined) data.active = dto.active;
+    try {
+      const row = await this.prisma.serambiAuthor.update({
+        where: { id },
+        data,
+      });
+      return ok(row, 'Penulis diperbarui');
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          message: 'Nama penulis sudah ada',
+          error: 'CONFLICT',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** Hapus master penulis. Post lama tetap ada (authorId → NULL via FK),
+   *  nama & avatar snapshot yang sudah tersimpan di post tidak berubah. */
+  async adminRemoveAuthor(id: string): Promise<ResponsePayload<unknown>> {
+    await this.ensureAuthorExists(id);
+    await this.prisma.serambiAuthor.delete({ where: { id } });
+    return ok({ id }, 'Penulis dihapus');
+  }
+
+  private async ensureAuthorExists(id: string): Promise<void> {
+    const found = await this.prisma.serambiAuthor.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!found) {
+      throw new NotFoundException({
+        message: `Penulis #${id} tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
   }
 
   // ─── Admin: moderasi komentar ────────────────────────────────────────

@@ -28,10 +28,13 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtOrAdminKeyGuard } from '../../common/guards/jwt-or-admin-key.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
+  AdminAuthorListQueryDto,
   AdminCommentListQueryDto,
   AdminPostListQueryDto,
+  CreateSerambiAuthorDto,
   CreateSerambiPostDto,
   UpdateCommentStatusDto,
+  UpdateSerambiAuthorDto,
   UpdateSerambiPostDto,
 } from './dto/serambi.dto';
 import { processImageToWebp } from '../../common/util/image';
@@ -135,6 +138,37 @@ export class SerambiAdminController {
   @ApiOperation({ summary: 'Hapus komentar' })
   removeComment(@Param('id') id: string) {
     return this.service.adminRemoveComment(id);
+  }
+
+  // ─── Master penulis (static route sebelum posts/:id) ─────────────────
+
+  @Get('authors')
+  @ApiOperation({ summary: 'List master penulis (untuk dropdown di form post)' })
+  listAuthors(@Query() query: AdminAuthorListQueryDto) {
+    return this.service.adminListAuthors(query);
+  }
+
+  @Post('authors')
+  @ApiOperation({ summary: 'Buat penulis (nama unik + avatar opsional)' })
+  createAuthor(@Body() dto: CreateSerambiAuthorDto) {
+    return this.service.adminCreateAuthor(dto);
+  }
+
+  @Patch('authors/:id')
+  @ApiOperation({ summary: 'Edit penulis (nama/avatar/aktif)' })
+  updateAuthor(
+    @Param('id') id: string,
+    @Body() dto: UpdateSerambiAuthorDto,
+  ) {
+    return this.service.adminUpdateAuthor(id, dto);
+  }
+
+  @Delete('authors/:id')
+  @ApiOperation({
+    summary: 'Hapus penulis (post lama tetap; nama/avatar snapshot dipertahankan)',
+  })
+  removeAuthor(@Param('id') id: string) {
+    return this.service.adminRemoveAuthor(id);
   }
 
   // ─── Post CRUD ───────────────────────────────────────────────────────

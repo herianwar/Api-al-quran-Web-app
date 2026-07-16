@@ -1436,8 +1436,13 @@ model SerambiPost {
   body            String   @db.Text
   /// Gambar opsional (URL relatif /uploads/... atau absolut).
   imageUrl        String?
+  /// Nama & avatar didenormalisasi dari SerambiAuthor saat post dibuat/diedit
+  /// (snapshot — feed tetap cepat & tak berubah kalau penulis kelak di-rename).
   authorName      String   @default("Rumah Qur'an")
   authorAvatarUrl String?
+  /// Referensi opsional ke master penulis yang dipilih admin. SetNull agar
+  /// hapus penulis tidak menghapus post (nama/avatar sudah tersimpan snapshot).
+  authorId        String?
   /// Badge centang; post admin selalu true.
   verified        Boolean  @default(true)
   /// "draft" | "published" | "archived".
@@ -1448,11 +1453,32 @@ model SerambiPost {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  author   SerambiAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
   likes    SerambiLike[]
   comments SerambiComment[]
 
   @@index([status, createdAt])
+  @@index([authorId])
   @@map("serambi_posts")
+}
+
+/// Master data penulis Serambi: admin memilih penulis di form post daripada
+/// mengetik nama & meng-upload avatar berulang kali.
+model SerambiAuthor {
+  id        String   @id @default(uuid())
+  /// Nama penulis (unik agar tidak dobel).
+  name      String   @unique
+  /// URL avatar (relatif /uploads/... atau absolut). Opsional.
+  avatarUrl String?
+  /// Nonaktifkan tanpa menghapus (tetap tampil di post lama).
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts SerambiPost[]
+
+  @@index([active, name])
+  @@map("serambi_authors")
 }
 
 model SerambiLike {

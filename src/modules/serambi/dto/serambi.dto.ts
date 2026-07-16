@@ -1,6 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination';
 
 /** Status sebuah post Serambi. */
@@ -68,6 +75,15 @@ export class CreateSerambiPostDto {
   @MaxLength(500)
   authorAvatarUrl?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'ID master penulis. Bila diisi, authorName & authorAvatarUrl diambil otomatis dari master (menimpa nilai manual di atas).',
+  })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  authorId?: string;
+
   @ApiPropertyOptional({ enum: SERAMBI_POST_STATUS, default: 'published' })
   @IsOptional()
   @IsIn(SERAMBI_POST_STATUS as unknown as string[], {
@@ -106,6 +122,15 @@ export class UpdateSerambiPostDto {
   @IsString()
   @MaxLength(500)
   authorAvatarUrl?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "ID master penulis. Bila diisi, authorName & authorAvatarUrl disalin dari master. Kirim '' untuk melepas referensi penulis.",
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  authorId?: string;
 
   @ApiPropertyOptional({ enum: SERAMBI_POST_STATUS })
   @IsOptional()
@@ -157,4 +182,69 @@ export class AdminCommentListQueryDto extends PaginationQueryDto {
   @IsString()
   @MaxLength(120)
   q?: string;
+}
+
+// ─── Admin: master penulis ─────────────────────────────────────────────
+
+/** Body POST /admin/serambi/authors. */
+export class CreateSerambiAuthorDto {
+  @ApiProperty({ example: 'Ustadz Ahmad', minLength: 1, maxLength: 80 })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1, { message: 'Nama penulis tidak boleh kosong' })
+  @MaxLength(80, { message: 'Nama penulis maksimal 80 karakter' })
+  name!: string;
+
+  @ApiPropertyOptional({ example: '/uploads/serambi/avatar.webp' })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string;
+}
+
+/** Body PATCH /admin/serambi/authors/:id — semua field opsional. */
+export class UpdateSerambiAuthorDto {
+  @ApiPropertyOptional({ minLength: 1, maxLength: 80 })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(1, { message: 'Nama penulis tidak boleh kosong' })
+  @MaxLength(80, { message: 'Nama penulis maksimal 80 karakter' })
+  name?: string;
+
+  @ApiPropertyOptional({ description: "Kirim '' untuk menghapus avatar" })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Nonaktifkan tanpa menghapus' })
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+/** Query GET /admin/serambi/authors. */
+export class AdminAuthorListQueryDto {
+  @ApiPropertyOptional({ description: 'Cari nama penulis' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description: 'Hanya penulis aktif (default: semua)',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : undefined,
+  )
+  @IsBoolean()
+  activeOnly?: boolean;
 }

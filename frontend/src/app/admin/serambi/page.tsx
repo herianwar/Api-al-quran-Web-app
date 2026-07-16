@@ -12,13 +12,14 @@ import {
   Search,
   Trash2,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { API_URL, apiFetch, fetcherFull, tokenStore } from "@/lib/api";
-import type { SerambiPost, SerambiStatus } from "@/lib/types";
+import type { SerambiAuthor, SerambiPost, SerambiStatus } from "@/lib/types";
 import { ErrorBox, Spinner } from "@/components/Spinner";
 import { DataTable, Pagination } from "@/components/admin/DataTable";
 import { EmptyState } from "@/components/admin/EmptyState";
@@ -144,6 +145,13 @@ export default function AdminSerambiPage() {
         description={description}
         action={
           <div className="flex items-center gap-2">
+            <Link
+              href="/admin/serambi/authors"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500 hover:text-emerald-700"
+            >
+              <Users size={15} />
+              Penulis
+            </Link>
             <Link
               href="/admin/serambi/comments"
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500 hover:text-emerald-700"
@@ -442,12 +450,32 @@ function PostEditor({
   const [authorAvatarUrl, setAuthorAvatarUrl] = useState<string | null>(
     post?.authorAvatarUrl ?? null,
   );
+  // "" = tulis manual; selain itu = id master penulis yang dipilih.
+  const [authorId, setAuthorId] = useState<string>(post?.authorId ?? "");
   const [status, setStatus] = useState<SerambiStatus>(post?.status ?? "draft");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const isEdit = !!post;
+
+  // Daftar penulis aktif untuk dropdown.
+  const { data: authorsRes } = useSWR(
+    "/admin/serambi/authors?activeOnly=true",
+    fetcherFull<SerambiAuthor[]>,
+  );
+  const authors = authorsRes?.data ?? [];
+  const isManual = authorId === "";
+
+  function pickAuthor(id: string) {
+    setAuthorId(id);
+    if (id === "") return; // mode manual — biarkan nama/avatar apa adanya
+    const a = authors.find((x) => x.id === id);
+    if (a) {
+      setAuthorName(a.name);
+      setAuthorAvatarUrl(a.avatarUrl ?? null);
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -498,6 +526,9 @@ function PostEditor({
     const payload = {
       body: body.trim(),
       imageUrl: imageUrl ?? "",
+      // authorId non-kosong → backend menyalin nama+avatar dari master.
+      // "" → pakai nama/avatar manual di bawah.
+      authorId,
       authorName: authorName.trim() || DEFAULT_AUTHOR,
       authorAvatarUrl: authorAvatarUrl ?? "",
       status: finalStatus,
@@ -618,19 +649,30 @@ function PostEditor({
             </div>
           </div>
 
-          {/* Author name + avatar + status */}
+          {/* Penulis (pilih master / tulis manual) + status */}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Nama penulis
+                Penulis
               </label>
-              <input
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                maxLength={80}
-                placeholder={DEFAULT_AUTHOR}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-500"
-              />
+              <select
+                value={authorId}
+                onChange={(e) => pickAuthor(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none focus:border-emerald-500"
+              >
+                <option value="">✍️ Tulis manual…</option>
+                {authors.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <Link
+                href="/admin/serambi/authors"
+                className="mt-1 inline-block text-[11px] font-medium text-emerald-600 hover:underline"
+              >
+                + Kelola master penulis
+              </Link>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -648,49 +690,92 @@ function PostEditor({
             </div>
           </div>
 
-          {/* Avatar uploader */}
-          <div className="mt-4">
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Avatar penulis (opsional)
-            </label>
-            <div className="flex items-center gap-3">
-              {previewAvatar ? (
-                <div className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewAvatar}
-                    alt=""
-                    className="h-12 w-12 rounded-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setAuthorAvatarUrl(null)}
-                    aria-label="Hapus avatar"
-                    className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white shadow"
-                  >
-                    <X size={11} />
-                  </button>
-                </div>
-              ) : (
-                <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-400 hover:border-emerald-400 hover:text-emerald-500">
-                  <ImagePlus size={16} />
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) uploadImage(f, "authorAvatarUrl");
-                      e.target.value = "";
-                    }}
-                  />
+          {isManual ? (
+            <>
+              {/* Nama penulis manual */}
+              <div className="mt-4">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Nama penulis
                 </label>
+                <input
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                  maxLength={80}
+                  placeholder={DEFAULT_AUTHOR}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Avatar uploader manual */}
+              <div className="mt-4">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Avatar penulis (opsional)
+                </label>
+                <div className="flex items-center gap-3">
+                  {previewAvatar ? (
+                    <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewAvatar}
+                        alt=""
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setAuthorAvatarUrl(null)}
+                        aria-label="Hapus avatar"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white shadow"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-400 hover:border-emerald-400 hover:text-emerald-500">
+                      <ImagePlus size={16} />
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadImage(f, "authorAvatarUrl");
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    Kosongkan untuk pakai logo brand default.
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Ringkasan penulis terpilih (read-only) */
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+              {previewAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewAvatar}
+                  alt=""
+                  className="h-11 w-11 rounded-full object-cover"
+                />
+              ) : (
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+                  <MessageSquareQuote size={16} />
+                </span>
               )}
-              <span className="text-xs text-slate-400">
-                Kosongkan untuk pakai logo brand default.
-              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-800">
+                  {authorName}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Nama &amp; avatar dari master penulis. Ubah di “Kelola master
+                  penulis”.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Card preview */}
           <div className="mt-5">

@@ -530,12 +530,24 @@ export interface SerambiPost {
   imageUrl: string | null;
   authorName: string;
   authorAvatarUrl: string | null;
+  authorId: string | null;
   verified: boolean;
   status: SerambiStatus;
   likeCount: number;
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Master penulis Serambi (dipilih di form post daripada ketik manual). */
+export interface SerambiAuthor {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { posts: number };
 }
 
 /** Komentar Serambi untuk moderasi admin (+ user & post terkait). */
