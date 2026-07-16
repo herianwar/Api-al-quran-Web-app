@@ -26,8 +26,18 @@ export function normalizeNoHp(value: unknown): unknown {
   return s;
 }
 
+/**
+ * Normalize an email for case-insensitive matching: trim surrounding
+ * whitespace and lowercase it. Non-string input is returned as-is so
+ * `@IsEmail` reports a clear validation error instead.
+ */
+export function normalizeEmail(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toLowerCase() : value;
+}
+
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })
+  @Transform(({ value }) => normalizeEmail(value))
   @IsEmail({}, { message: 'Email tidak valid' })
   email: string;
 
@@ -56,6 +66,7 @@ export class RegisterDto {
 
 export class LoginDto {
   @ApiProperty({ example: 'user@example.com' })
+  @Transform(({ value }) => normalizeEmail(value))
   @IsEmail({}, { message: 'Email tidak valid' })
   email: string;
 

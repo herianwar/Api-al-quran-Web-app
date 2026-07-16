@@ -60,8 +60,10 @@ export class AdminService implements OnApplicationBootstrap {
    * role is upgraded.
    */
   async onApplicationBootstrap(): Promise<void> {
-    const email = this.config.get<string>('adminBootstrapEmail');
-    if (!email) return;
+    const raw = this.config.get<string>('adminBootstrapEmail');
+    if (!raw) return;
+    // Match stored emails, which are normalized to trimmed-lowercase.
+    const email = raw.trim().toLowerCase();
     try {
       const updated = await this.prisma.user.updateMany({
         where: { email, role: { not: 'admin' } },
