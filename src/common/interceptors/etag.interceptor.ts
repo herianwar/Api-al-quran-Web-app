@@ -12,6 +12,20 @@ import { ETAG_METADATA_KEY } from '../decorators/etag.decorator';
 
 interface ETagMeta {
   maxAgeSeconds: number;
+  ignoreFields?: string[];
+}
+
+/**
+ * True when `If-None-Match` covers `etag`. Handles the "*" wildcard, the
+ * comma-separated list form, and weak validators (`W/"abc"`) — clients and
+ * proxies emit all three, and a naive `===` silently never matches.
+ */
+function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  if (header.trim() === '*') return true;
+  const normalize = (v: string) => v.trim().replace(/^W\//, '');
+  const target = normalize(etag);
+  return header.split(',').some((candidate) => normalize(candidate) === target);
 }
 
 /**
@@ -49,7 +63,16 @@ export class ETagInterceptor implements NestInterceptor {
         // Stable hash of the serialized body. We use SHA-1 (96-bit hex
         // prefix is plenty for cache key uniqueness) and quote it per
         // RFC 7232 "strong validator" syntax.
-        const json = JSON.stringify(body);
+        //
+        // Fields listed in `ignoreFields` are dropped at every depth by the
+        // replacer, so volatile counters don't invalidate the cache. The
+        // response body itself is untouched — only the hash input is.
+        const ignore = new Set(meta.ignoreFields ?? []);
+        const json = ignore.size
+          ? JSON.stringify(body, (key, value) =>
+              ignore.has(key) ? undefined : (value as unknown),
+            )
+          : JSON.stringify(body);
         const hash = createHash('sha1').update(json).digest('hex').slice(0, 24);
         const etag = `"${hash}"`;
 
@@ -59,8 +82,7 @@ export class ETagInterceptor implements NestInterceptor {
           `public, max-age=${meta.maxAgeSeconds}, must-revalidate`,
         );
 
-        const ifNoneMatch = req.headers['if-none-match'];
-        if (ifNoneMatch === etag) {
+        if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
           res.status(304);
           // 304 MUST NOT have a body per RFC 7232.
           return undefined;

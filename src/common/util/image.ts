@@ -71,6 +71,55 @@ export async function processImageToWebp(
   }
 }
 
+/** Suffix used for width variants: `foo.webp` → `foo-400w.webp`. */
+export function variantFilename(filename: string, width: number): string {
+  const ext = extname(filename);
+  return `${filename.slice(0, filename.length - ext.length)}-${width}w.webp`;
+}
+
+/**
+ * Write down-scaled WebP siblings of an already-processed upload, so list
+ * cards can fetch a 400px-wide file instead of the full-size original.
+ *
+ * Named `<base>-<width>w.webp` next to the source. Never upscales: asking for
+ * 800w from a 500px-wide source just re-encodes at 500px, which is still a
+ * smaller file than the original and keeps the URL predictable.
+ *
+ * Best-effort per width — a failure is logged and skipped rather than failing
+ * the upload, exactly like {@link processImageToWebp}.
+ *
+ * @returns the filenames actually written.
+ */
+export async function generateWidthVariants(
+  dir: string,
+  filename: string,
+  widths: number[],
+): Promise<string[]> {
+  // Animated GIFs are passed through untouched upstream; resizing them here
+  // would flatten the animation.
+  if (extname(filename).toLowerCase() === '.gif') return [];
+
+  const written: string[] = [];
+  for (const width of widths) {
+    const outName = variantFilename(filename, width);
+    if (outName === filename) continue; // never overwrite the source
+    try {
+      const buffer = await sharp(join(dir, filename))
+        .rotate()
+        .resize({ width, withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY })
+        .toBuffer();
+      await fsp.writeFile(join(dir, outName), buffer);
+      written.push(outName);
+    } catch (err) {
+      logger.warn(
+        `Variant ${width}w failed for ${filename}: ${(err as Error).message}`,
+      );
+    }
+  }
+  return written;
+}
+
 async function fileSize(path: string): Promise<number> {
   try {
     const stat = await fsp.stat(path);

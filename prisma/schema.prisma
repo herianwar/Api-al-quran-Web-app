@@ -1215,7 +1215,27 @@ model Artikel {
   category ArtikelKategori? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   author   SerambiAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
+  // Kept on purpose: the narrow status index is what the planner picks for
+  // the `count(*) WHERE status='published'` half of the list query, and it
+  // beats every composite there (measured on 50k rows: ~9ms vs ~14ms).
   @@index([status])
+  // Featured carousel on the hub page. The big win of this migration: the
+  // planner previously scanned every row to find the ~2% featured ones
+  // (measured 24.7ms → 0.11ms on 50k rows).
+  @@index([status, isFeatured, publishedAt])
+  // GIN over the tags array — serves `tags has` (?tag=) and `tags hasSome`
+  // (the "related articles" query); a B-tree can't index array containment.
+  @@index([tags], type: Gin)
+  // Trigram indexes backing the ?q= search (ILIKE '%q%', which no B-tree can
+  // serve). Measured 196ms → 2.6ms on 50k rows. See the
+  // 20260720130000_artikel_trgm_search migration for why trigram and not FTS.
+  @@index([judul(ops: raw("gin_trgm_ops"))], type: Gin, map: "artikel_judul_trgm_idx")
+  @@index([ringkasan(ops: raw("gin_trgm_ops"))], type: Gin, map: "artikel_ringkasan_trgm_idx")
+  // NOTE: a composite @@index([status, publishedAt]) was measured and left
+  // out. With ~90% of rows published, `status` is not selective enough for
+  // the planner to prefer it over a backward scan of artikel_publishedAt_idx
+  // for the ORDER BY publishedAt DESC path — it was never chosen, so it
+  // would be pure write overhead.
   @@index([categoryId])
   @@index([isFeatured])
   @@index([publishedAt])

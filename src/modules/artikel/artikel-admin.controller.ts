@@ -28,8 +28,15 @@ import { extname } from 'path';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtOrAdminKeyGuard } from '../../common/guards/jwt-or-admin-key.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { processImageToWebp } from '../../common/util/image';
-import { ArtikelService, ARTIKEL_UPLOAD_DIR } from './artikel.service';
+import {
+  generateWidthVariants,
+  processImageToWebp,
+} from '../../common/util/image';
+import {
+  ArtikelService,
+  ARTIKEL_UPLOAD_DIR,
+  ARTIKEL_COVER_WIDTHS,
+} from './artikel.service';
 import {
   BulkArtikelDto,
   CreateArtikelDto,
@@ -140,6 +147,12 @@ export class ArtikelAdminController {
       file.filename,
       { maxWidth: 1600 },
     );
+    // Generate 400w/800w cover variants alongside the original. This endpoint
+    // also serves inline editor images; those variants just go unused (a few
+    // KB on disk), which is cheaper than a separate cover-only upload path.
+    await generateWidthVariants(ARTIKEL_UPLOAD_DIR, filename, [
+      ...ARTIKEL_COVER_WIDTHS,
+    ]);
     return this.service.registerUpload(filename);
   }
 

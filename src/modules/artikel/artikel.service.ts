@@ -3,6 +3,8 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -29,6 +31,7 @@ import {
   htmlToText,
   sanitizeArticleHtml,
 } from './html-sanitize';
+import { variantFilename } from '../../common/util/image';
 
 /** Where article cover/inline uploads live on disk. Served at /uploads/artikel
  *  via the static-assets mount in main.ts (same scheme as the shop module). */
@@ -41,6 +44,13 @@ export const ARTIKEL_UPLOAD_DIR = join(
   'uploads',
   'artikel',
 );
+
+/** Cover width variants generated on upload (px). 400 = list card thumb,
+ *  800 = detail hero. Kept here so the upload handler and the backfill
+ *  script share one source of truth. */
+export const ARTIKEL_COVER_WIDTHS = [400, 800] as const;
+export const ARTIKEL_THUMB_WIDTH = 400;
+export const ARTIKEL_HERO_WIDTH = 800;
 
 /** Public fields returned in list responses (no full body — keeps payload light). */
 const LIST_SELECT = {
@@ -64,7 +74,7 @@ const LIST_SELECT = {
 } satisfies Prisma.ArtikelSelect;
 
 @Injectable()
-export class ArtikelService {
+export class ArtikelService implements OnModuleInit, OnModuleDestroy {
   /** Public base URL (e.g. https://rumahquran.id) used to turn stored
    *  /uploads/... paths into absolute media links for API clients (the
    *  Flutter app can't resolve relative paths). Empty → paths stay relative. */
@@ -92,6 +102,47 @@ export class ArtikelService {
   /** Absolutize a row's coverUrl (shallow clone so we never mutate Prisma's). */
   private withAbsCover<T extends { coverUrl?: string | null }>(row: T): T {
     return { ...row, coverUrl: this.absUrl(row.coverUrl) };
+  }
+
+  /**
+   * Derive the URL of a cover width variant, or null when one can't exist.
+   *
+   * Variants are only produced for our own WebP uploads under
+   * /uploads/artikel/ (see generateWidthVariants on upload). External or
+   * non-WebP covers have no sibling, so we return null and let the client
+   * fall back to `coverUrl`. Old uploads with no variant on disk yet are
+   * covered by the one-off backfill script — until it runs they'd 404, which
+   * is why the client must treat these fields as optional.
+   */
+  private coverVariantUrl(
+    coverUrl: string | null | undefined,
+    width: number,
+  ): string | null {
+    if (!coverUrl) return null;
+    if (/^https?:\/\//i.test(coverUrl)) return null; // external
+    if (!coverUrl.startsWith('/uploads/artikel/')) return null;
+    if (!coverUrl.toLowerCase().endsWith('.webp')) return null; // gif/legacy
+    const idx = coverUrl.lastIndexOf('/') + 1;
+    const dir = coverUrl.slice(0, idx);
+    const variant = variantFilename(coverUrl.slice(idx), width);
+    return this.absUrl(`${dir}${variant}`);
+  }
+
+  /**
+   * Attach absolute `coverUrl` plus derived `coverThumbUrl` (400w, list cards)
+   * and `coverHeroUrl` (800w, detail hero). Both new fields are additive —
+   * `coverUrl` is untouched so older app builds keep working.
+   */
+  private withCoverVariants<T extends { coverUrl?: string | null }>(
+    row: T,
+  ): T & { coverThumbUrl: string | null; coverHeroUrl: string | null } {
+    const raw = row.coverUrl;
+    return {
+      ...row,
+      coverUrl: this.absUrl(raw),
+      coverThumbUrl: this.coverVariantUrl(raw, ARTIKEL_THUMB_WIDTH),
+      coverHeroUrl: this.coverVariantUrl(raw, ARTIKEL_HERO_WIDTH),
+    };
   }
 
   /** Rewrite inline <img src="/uploads/artikel/..."> in body HTML to absolute
@@ -148,6 +199,71 @@ export class ArtikelService {
       }
     }
     return true;
+  }
+
+  // ─── View counter (buffered, never touches updatedAt) ────────────────
+  // Two rules govern this counter:
+  //
+  //  1. It must NOT bump `updatedAt`. That column is the delta-sync cursor
+  //     for `?since=` and is part of the list payload, so a plain
+  //     `prisma.artikel.update({ views: { increment: 1 } })` — which fires
+  //     Prisma's @updatedAt — would make every article look "changed" on
+  //     every read and would bust the ETag cache continuously. Hence the
+  //     raw UPDATE below, which writes `views` and nothing else.
+  //
+  //  2. It should not cost one DB write per article read. Increments are
+  //     accumulated in memory and flushed in a single batched statement.
+  //     A flush lost to a crash costs a few view counts — acceptable.
+
+  /** artikelId → pending increment, drained by {@link flushViews}. */
+  private readonly pendingViews = new Map<number, number>();
+  private viewFlushTimer?: NodeJS.Timeout;
+  private static readonly VIEW_FLUSH_MS = 30_000;
+
+  onModuleInit(): void {
+    this.viewFlushTimer = setInterval(() => {
+      void this.flushViews();
+    }, ArtikelService.VIEW_FLUSH_MS);
+    // Don't hold the event loop open (matters for tests + graceful shutdown).
+    this.viewFlushTimer.unref?.();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.viewFlushTimer) clearInterval(this.viewFlushTimer);
+    await this.flushViews();
+  }
+
+  /** Queue a view increment for the next flush. */
+  private bumpView(id: number): void {
+    this.pendingViews.set(id, (this.pendingViews.get(id) ?? 0) + 1);
+  }
+
+  /**
+   * Write every buffered increment in one statement. Exposed (not private)
+   * so tests can force a flush instead of waiting for the timer.
+   */
+  async flushViews(): Promise<void> {
+    if (!this.pendingViews.size) return;
+    const batch = [...this.pendingViews.entries()];
+    this.pendingViews.clear();
+
+    const ids = batch.map(([id]) => id);
+    const incs = batch.map(([, n]) => n);
+    try {
+      // Raw on purpose: bypasses Prisma's @updatedAt. See the note above.
+      await this.prisma.$executeRaw`
+        UPDATE artikel AS a
+           SET views = a.views + v.inc
+          FROM (
+            SELECT UNNEST(${ids}::int[]) AS id, UNNEST(${incs}::int[]) AS inc
+          ) AS v
+         WHERE a.id = v.id`;
+    } catch {
+      // Re-queue so the next tick retries rather than dropping the counts.
+      for (const [id, n] of batch) {
+        this.pendingViews.set(id, (this.pendingViews.get(id) ?? 0) + n);
+      }
+    }
   }
 
   // ─── Scheduled publish (lazy promotion) ──────────────────────────────
@@ -342,8 +458,58 @@ export class ArtikelService {
 
     // Public clients (mobile app) need absolute cover URLs; admin keeps the
     // raw relative paths so its edit form round-trips correctly.
-    const data = publicOnly ? rows.map((r) => this.withAbsCover(r)) : rows;
+    const data = publicOnly ? rows.map((r) => this.withCoverVariants(r)) : rows;
     return ok(data, 'Daftar artikel', paginationMeta(query, total));
+  }
+
+  /**
+   * Hub payload for the app's article landing page: the three lists it used
+   * to fetch in parallel (latest, categories, featured) rolled into one
+   * ETag'd response. The standalone endpoints stay for older app builds.
+   *
+   * @param limit how many "latest" articles to include (page 1).
+   */
+  async hub(limit = 10): Promise<ResponsePayload<unknown>> {
+    void this.promoteDueScheduled();
+
+    const [latest, featured, kategori] = await this.prisma.$transaction([
+      this.prisma.artikel.findMany({
+        where: { status: 'published' },
+        orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+        take: limit,
+        select: LIST_SELECT,
+      }),
+      this.prisma.artikel.findMany({
+        where: { status: 'published', isFeatured: true },
+        orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+        take: 8,
+        select: LIST_SELECT,
+      }),
+      this.prisma.artikelKategori.findMany({
+        where: { isActive: true },
+        orderBy: [{ urutan: 'asc' }, { nama: 'asc' }],
+        include: {
+          _count: { select: { artikel: { where: { status: 'published' } } } },
+        },
+      }),
+    ]);
+
+    return ok(
+      {
+        artikel: latest.map((r) => this.withCoverVariants(r)),
+        featured: featured.map((r) => this.withCoverVariants(r)),
+        kategori: kategori.map((r) => ({
+          id: r.id,
+          slug: r.slug,
+          nama: r.nama,
+          deskripsi: r.deskripsi,
+          urutan: r.urutan,
+          isActive: r.isActive,
+          jumlahArtikel: r._count.artikel,
+        })),
+      },
+      'Hub artikel',
+    );
   }
 
   // ─── Artikel: detail ─────────────────────────────────────────────────
@@ -368,12 +534,8 @@ export class ArtikelService {
     }
 
     // Count one view per IP per 30-min window (refresh doesn't inflate).
-    const counted = this.shouldCountView(ip, slug);
-    if (counted) {
-      void this.prisma.artikel
-        .update({ where: { id: row.id }, data: { views: { increment: 1 } } })
-        .catch(() => undefined);
-    }
+    // Buffered — nothing hits the DB here, and `updatedAt` stays untouched.
+    if (this.shouldCountView(ip, slug)) this.bumpView(row.id);
 
     // Related: same category or shared tag, newest first, excluding self.
     // Falls back to "other recent published" when the article has neither.
@@ -393,11 +555,15 @@ export class ArtikelService {
 
     return ok(
       {
-        ...this.withAbsCover(row),
+        ...this.withCoverVariants(row),
         ogImage: this.absUrl(row.ogImage),
         konten: this.absBody(row.konten),
-        views: row.views + (counted ? 1 : 0),
-        related: related.map((r) => this.withAbsCover(r)),
+        // Stored value only — deliberately NOT the live "+1". A per-request
+        // value would change the payload on every read and the ETag with it,
+        // so the detail cache would never hit. `views` is also excluded from
+        // the ETag hash (see @ETagCacheable in the controller).
+        views: row.views,
+        related: related.map((r) => this.withCoverVariants(r)),
       },
       'Detail artikel',
     );
@@ -760,10 +926,19 @@ export class ArtikelService {
     if (!url.startsWith('/uploads/artikel/')) return;
     const filename = url.slice('/uploads/artikel/'.length);
     if (!/^[a-zA-Z0-9._-]+$/.test(filename)) return;
-    try {
-      await fsp.unlink(join(ARTIKEL_UPLOAD_DIR, filename));
-    } catch {
-      /* file already gone */
+    // Remove the original plus any width variants generated for it.
+    const names = [filename];
+    if (filename.toLowerCase().endsWith('.webp')) {
+      for (const w of ARTIKEL_COVER_WIDTHS) {
+        names.push(variantFilename(filename, w));
+      }
+    }
+    for (const name of names) {
+      try {
+        await fsp.unlink(join(ARTIKEL_UPLOAD_DIR, name));
+      } catch {
+        /* file already gone */
+      }
     }
   }
 
