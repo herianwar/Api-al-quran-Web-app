@@ -269,6 +269,8 @@ model User {
   feedback        Feedback[]
   serambiLikes    SerambiLike[]
   serambiComments SerambiComment[]
+  artikelLikes     ArtikelLike[]
+  artikelBookmarks ArtikelBookmark[]
 
   @@map("users")
 }
@@ -1194,6 +1196,9 @@ model Artikel {
   menitBaca   Int      @default(1)
   /// Jumlah view (increment saat detail diakses publik).
   views       Int      @default(0)
+  /// Jumlah like (publik, ditampilkan di app). Disinkron transaksional dengan
+  /// baris ArtikelLike — beda dari bookmark yang murni privat tanpa counter.
+  likeCount   Int      @default(0)
   /// Waktu publish; diisi saat status pertama kali menjadi published.
   publishedAt DateTime?
   /// Jika status "scheduled": waktu artikel akan otomatis terbit.
@@ -1214,6 +1219,8 @@ model Artikel {
 
   category ArtikelKategori? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   author   SerambiAuthor?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  likes     ArtikelLike[]
+  bookmarks ArtikelBookmark[]
 
   // Kept on purpose: the narrow status index is what the planner picks for
   // the `count(*) WHERE status='published'` half of the list query, and it
@@ -1242,6 +1249,38 @@ model Artikel {
   @@index([scheduledAt])
   @@index([authorId])
   @@map("artikel")
+}
+
+/// Like artikel per-user, tersinkron akun (mengikuti pola SerambiLike).
+/// Idempoten via @@unique; hitungan publik dijaga di Artikel.likeCount.
+model ArtikelLike {
+  id        String   @id @default(uuid())
+  artikelId Int
+  userId    String
+  createdAt DateTime @default(now())
+
+  artikel Artikel @relation(fields: [artikelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([artikelId, userId])
+  @@index([userId])
+  @@map("artikel_likes")
+}
+
+/// Bookmark artikel per-user (privat, TANPA counter). id artikel dipakai
+/// sebagai FK stabil (slug bisa berubah saat admin edit).
+model ArtikelBookmark {
+  id        String   @id @default(uuid())
+  artikelId Int
+  userId    String
+  createdAt DateTime @default(now())
+
+  artikel Artikel @relation(fields: [artikelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([artikelId, userId])
+  @@index([userId])
+  @@map("artikel_bookmarks")
 }
 
 model AiQuery {

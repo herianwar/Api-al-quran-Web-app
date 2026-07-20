@@ -18,6 +18,32 @@ import {
 export const ARTIKEL_STATUSES = ['draft', 'scheduled', 'published'] as const;
 import { PaginationQueryDto } from '../../../common/dto/pagination';
 
+/** Body untuk POST /artikel/sync — merge like & bookmark lokal (daftar slug)
+ *  ke akun setelah login. Dibatasi 500 slug/field agar tak bisa membanjiri DB. */
+export class SyncArtikelInteractionsDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Slug artikel yang di-like secara lokal (maks 500)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @MaxLength(140, { each: true })
+  likedSlugs?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Slug artikel yang di-bookmark secara lokal (maks 500)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @MaxLength(140, { each: true })
+  savedSlugs?: string[];
+}
+
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** Public/admin list query for articles. Extends pagination so the global

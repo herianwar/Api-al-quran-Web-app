@@ -66,6 +66,7 @@ const LIST_SELECT = {
   tags: true,
   menitBaca: true,
   views: true,
+  likeCount: true,
   publishedAt: true,
   scheduledAt: true,
   createdAt: true,
@@ -199,6 +200,233 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return true;
+  }
+
+  // ─── Like & bookmark per-user (pola SerambiLike) ─────────────────────
+
+  /** Set id artikel yang sudah di-like `userId` (untuk flag `liked` di list,
+   *  satu query — bukan N+1). Guest (userId null) → set kosong. */
+  private async likedSet(
+    artikelIds: number[],
+    userId: string | null,
+  ): Promise<Set<number>> {
+    if (!userId || artikelIds.length === 0) return new Set();
+    const rows = await this.prisma.artikelLike.findMany({
+      where: { userId, artikelId: { in: artikelIds } },
+      select: { artikelId: true },
+    });
+    return new Set(rows.map((r) => r.artikelId));
+  }
+
+  /** Set id artikel yang di-bookmark `userId` (flag `saved`). */
+  private async bookmarkedSet(
+    artikelIds: number[],
+    userId: string | null,
+  ): Promise<Set<number>> {
+    if (!userId || artikelIds.length === 0) return new Set();
+    const rows = await this.prisma.artikelBookmark.findMany({
+      where: { userId, artikelId: { in: artikelIds } },
+      select: { artikelId: true },
+    });
+    return new Set(rows.map((r) => r.artikelId));
+  }
+
+  /** Resolve slug → id artikel published; 404 kalau tak ada. */
+  private async resolvePublishedId(slug: string): Promise<number> {
+    const row = await this.prisma.artikel.findFirst({
+      where: { slug, status: 'published' },
+      select: { id: true },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        message: `Artikel '${slug}' tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
+    return row.id;
+  }
+
+  /** POST like (idempoten & transaksional, seperti serambi.like). */
+  async like(
+    slug: string,
+    userId: string,
+  ): Promise<ResponsePayload<{ liked: boolean; likeCount: number }>> {
+    const artikelId = await this.resolvePublishedId(slug);
+    const likeCount = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.artikelLike.createMany({
+        data: [{ artikelId, userId }],
+        skipDuplicates: true,
+      });
+      if (created.count > 0) {
+        const a = await tx.artikel.update({
+          where: { id: artikelId },
+          data: { likeCount: { increment: 1 } },
+          select: { likeCount: true },
+        });
+        return a.likeCount;
+      }
+      const a = await tx.artikel.findUnique({
+        where: { id: artikelId },
+        select: { likeCount: true },
+      });
+      return a?.likeCount ?? 0;
+    });
+    return ok({ liked: true, likeCount }, 'Artikel disukai');
+  }
+
+  /** DELETE like (idempoten, counter dijaga ≥ 0). */
+  async unlike(
+    slug: string,
+    userId: string,
+  ): Promise<ResponsePayload<{ liked: boolean; likeCount: number }>> {
+    const artikelId = await this.resolvePublishedId(slug);
+    const likeCount = await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.artikelLike.deleteMany({
+        where: { artikelId, userId },
+      });
+      if (deleted.count > 0) {
+        const a = await tx.artikel.update({
+          where: { id: artikelId },
+          data: { likeCount: { decrement: 1 } },
+          select: { likeCount: true },
+        });
+        return Math.max(0, a.likeCount);
+      }
+      const a = await tx.artikel.findUnique({
+        where: { id: artikelId },
+        select: { likeCount: true },
+      });
+      return a?.likeCount ?? 0;
+    });
+    return ok({ liked: false, likeCount }, 'Batal suka');
+  }
+
+  /** POST bookmark (idempoten, tanpa counter). */
+  async bookmark(
+    slug: string,
+    userId: string,
+  ): Promise<ResponsePayload<{ saved: boolean }>> {
+    const artikelId = await this.resolvePublishedId(slug);
+    await this.prisma.artikelBookmark.createMany({
+      data: [{ artikelId, userId }],
+      skipDuplicates: true,
+    });
+    return ok({ saved: true }, 'Artikel disimpan');
+  }
+
+  /** DELETE bookmark (idempoten). */
+  async unbookmark(
+    slug: string,
+    userId: string,
+  ): Promise<ResponsePayload<{ saved: boolean }>> {
+    const artikelId = await this.resolvePublishedId(slug);
+    await this.prisma.artikelBookmark.deleteMany({ where: { artikelId, userId } });
+    return ok({ saved: false }, 'Batal simpan');
+  }
+
+  /** GET /artikel/bookmarks — artikel tersimpan user (published), terbaru
+   *  disimpan dulu. Item sama bentuknya dengan list (termasuk coverThumbUrl);
+   *  `saved` selalu true, `liked` dihitung per user. */
+  async listBookmarks(
+    query: ArtikelListQueryDto,
+    userId: string,
+  ): Promise<ResponsePayload<unknown>> {
+    const where: Prisma.ArtikelBookmarkWhereInput = {
+      userId,
+      artikel: { status: 'published' },
+    };
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.artikelBookmark.count({ where }),
+      this.prisma.artikelBookmark.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: { artikel: { select: LIST_SELECT } },
+        ...paginationArgs(query),
+      }),
+    ]);
+    const artikels = rows.map((r) => r.artikel);
+    const liked = await this.likedSet(
+      artikels.map((a) => a.id),
+      userId,
+    );
+    const data = artikels.map((a) => ({
+      ...this.withCoverVariants(a),
+      liked: liked.has(a.id),
+      saved: true,
+    }));
+    return ok(data, 'Artikel tersimpan', paginationMeta(query, total));
+  }
+
+  /** POST /artikel/sync — merge like & bookmark lokal (daftar slug) ke akun,
+   *  idempoten. Slug basi/tak-published diabaikan diam-diam. */
+  async syncInteractions(
+    userId: string,
+    likedSlugs: string[],
+    savedSlugs: string[],
+  ): Promise<
+    ResponsePayload<{ likedMerged: number; savedMerged: number; skipped: number }>
+  > {
+    const uniqLiked = [...new Set(likedSlugs)];
+    const uniqSaved = [...new Set(savedSlugs)];
+    const allSlugs = [...new Set([...uniqLiked, ...uniqSaved])];
+
+    // Satu query untuk semua slug → { slug: id } yang published.
+    const found = await this.prisma.artikel.findMany({
+      where: { slug: { in: allSlugs }, status: 'published' },
+      select: { id: true, slug: true },
+    });
+    const idBySlug = new Map(found.map((f) => [f.slug, f.id]));
+
+    const likedIds = uniqLiked
+      .map((s) => idBySlug.get(s))
+      .filter((v): v is number => typeof v === 'number');
+    const savedIds = uniqSaved
+      .map((s) => idBySlug.get(s))
+      .filter((v): v is number => typeof v === 'number');
+
+    // Slug yang tidak resolve (per field) → dilewati.
+    const skipped =
+      uniqLiked.filter((s) => !idBySlug.has(s)).length +
+      uniqSaved.filter((s) => !idBySlug.has(s)).length;
+
+    let likedMerged = 0;
+    let savedMerged = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      // LIKE: cari yang belum di-like agar counter naik akurat (per artikel +1).
+      if (likedIds.length) {
+        const existing = await tx.artikelLike.findMany({
+          where: { userId, artikelId: { in: likedIds } },
+          select: { artikelId: true },
+        });
+        const has = new Set(existing.map((e) => e.artikelId));
+        const newIds = likedIds.filter((id) => !has.has(id));
+        if (newIds.length) {
+          await tx.artikelLike.createMany({
+            data: newIds.map((artikelId) => ({ artikelId, userId })),
+            skipDuplicates: true,
+          });
+          await tx.artikel.updateMany({
+            where: { id: { in: newIds } },
+            data: { likeCount: { increment: 1 } },
+          });
+          likedMerged = newIds.length;
+        }
+      }
+      // BOOKMARK: tanpa counter → createMany skipDuplicates, hitung yang baru.
+      if (savedIds.length) {
+        const created = await tx.artikelBookmark.createMany({
+          data: savedIds.map((artikelId) => ({ artikelId, userId })),
+          skipDuplicates: true,
+        });
+        savedMerged = created.count;
+      }
+    });
+
+    return ok(
+      { likedMerged, savedMerged, skipped },
+      'Sinkronisasi selesai',
+    );
   }
 
   // ─── View counter (buffered, never touches updatedAt) ────────────────
@@ -404,10 +632,12 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
 
   // ─── Artikel: list ───────────────────────────────────────────────────
 
-  /** @param publicOnly when true, force status=published (ignores ?status). */
+  /** @param publicOnly when true, force status=published (ignores ?status).
+   *  @param userId when set (logged-in), fills per-item `liked`/`saved`. */
   async list(
     query: ArtikelListQueryDto,
     publicOnly: boolean,
+    userId: string | null = null,
   ): Promise<ResponsePayload<unknown>> {
     // Public hits drive the lazy scheduled-publish promotion (no cron infra).
     if (publicOnly) void this.promoteDueScheduled();
@@ -458,7 +688,19 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
 
     // Public clients (mobile app) need absolute cover URLs; admin keeps the
     // raw relative paths so its edit form round-trips correctly.
-    const data = publicOnly ? rows.map((r) => this.withCoverVariants(r)) : rows;
+    if (!publicOnly) {
+      return ok(rows, 'Daftar artikel', paginationMeta(query, total));
+    }
+    const ids = rows.map((r) => r.id);
+    const [liked, saved] = await Promise.all([
+      this.likedSet(ids, userId),
+      this.bookmarkedSet(ids, userId),
+    ]);
+    const data = rows.map((r) => ({
+      ...this.withCoverVariants(r),
+      liked: liked.has(r.id),
+      saved: saved.has(r.id),
+    }));
     return ok(data, 'Daftar artikel', paginationMeta(query, total));
   }
 
@@ -468,8 +710,12 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
    * ETag'd response. The standalone endpoints stay for older app builds.
    *
    * @param limit how many "latest" articles to include (page 1).
+   * @param userId when set (logged-in), fills per-item `liked`/`saved`.
    */
-  async hub(limit = 10): Promise<ResponsePayload<unknown>> {
+  async hub(
+    limit = 10,
+    userId: string | null = null,
+  ): Promise<ResponsePayload<unknown>> {
     void this.promoteDueScheduled();
 
     const [latest, featured, kategori] = await this.prisma.$transaction([
@@ -494,10 +740,22 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
 
+    // Flags over the union of both lists (one query each, no N+1).
+    const ids = [...new Set([...latest, ...featured].map((r) => r.id))];
+    const [liked, saved] = await Promise.all([
+      this.likedSet(ids, userId),
+      this.bookmarkedSet(ids, userId),
+    ]);
+    const withFlags = (r: { id: number; coverUrl?: string | null }) => ({
+      ...this.withCoverVariants(r),
+      liked: liked.has(r.id),
+      saved: saved.has(r.id),
+    });
+
     return ok(
       {
-        artikel: latest.map((r) => this.withCoverVariants(r)),
-        featured: featured.map((r) => this.withCoverVariants(r)),
+        artikel: latest.map(withFlags),
+        featured: featured.map(withFlags),
         kategori: kategori.map((r) => ({
           id: r.id,
           slug: r.slug,
@@ -519,6 +777,7 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
   async getBySlug(
     slug: string,
     ip = '',
+    userId: string | null = null,
   ): Promise<ResponsePayload<unknown>> {
     // A scheduled article whose time has come should be readable immediately.
     await this.promoteDueScheduled();
@@ -553,6 +812,13 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
       select: LIST_SELECT,
     });
 
+    // Per-user flags for the main article + its related list, in one query each.
+    const ids = [row.id, ...related.map((r) => r.id)];
+    const [liked, saved] = await Promise.all([
+      this.likedSet(ids, userId),
+      this.bookmarkedSet(ids, userId),
+    ]);
+
     return ok(
       {
         ...this.withCoverVariants(row),
@@ -563,7 +829,13 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
         // so the detail cache would never hit. `views` is also excluded from
         // the ETag hash (see @ETagCacheable in the controller).
         views: row.views,
-        related: related.map((r) => this.withCoverVariants(r)),
+        liked: liked.has(row.id),
+        saved: saved.has(row.id),
+        related: related.map((r) => ({
+          ...this.withCoverVariants(r),
+          liked: liked.has(r.id),
+          saved: saved.has(r.id),
+        })),
       },
       'Detail artikel',
     );

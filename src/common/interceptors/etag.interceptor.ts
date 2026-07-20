@@ -76,10 +76,23 @@ export class ETagInterceptor implements NestInterceptor {
         const hash = createHash('sha1').update(json).digest('hex').slice(0, 24);
         const etag = `"${hash}"`;
 
+        // These routes can embed per-user fields (e.g. artikel liked/saved)
+        // when the caller is logged in. Never let a shared/CDN cache store a
+        // personalized body and hand it to another user:
+        //   * Vary: Authorization keys every cache entry on the token, so an
+        //     authed response is never served to a guest (or a different user).
+        //   * A request that carries a token is marked private, no-store — it
+        //     must not be stored at all. Guest requests stay publicly cacheable
+        //     (their liked/saved are always false → deterministic + safe).
+        res.setHeader('Vary', 'Authorization');
+        const personalized = Boolean(req.headers['authorization']);
+
         res.setHeader('ETag', etag);
         res.setHeader(
           'Cache-Control',
-          `public, max-age=${meta.maxAgeSeconds}, must-revalidate`,
+          personalized
+            ? 'private, no-store'
+            : `public, max-age=${meta.maxAgeSeconds}, must-revalidate`,
         );
 
         if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
