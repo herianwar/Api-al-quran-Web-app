@@ -31,6 +31,7 @@ import {
   AdminAuthorListQueryDto,
   AdminCommentListQueryDto,
   AdminPostListQueryDto,
+  BulkSerambiPostDto,
   CreateSerambiAuthorDto,
   CreateSerambiPostDto,
   UpdateCommentStatusDto,
@@ -171,10 +172,32 @@ export class SerambiAdminController {
     return this.service.adminRemoveAuthor(id);
   }
 
+  // ─── Statistik & aksi massal (static routes sebelum posts/:id) ───────
+
+  @Get('stats')
+  @ApiOperation({
+    summary:
+      'Statistik Serambi: jumlah per status, total suka/komentar, terjadwal berikutnya, terpopuler, sebaran penulis, antrian moderasi',
+  })
+  stats() {
+    return this.service.adminStats();
+  }
+
+  @Post('posts/bulk')
+  @ApiOperation({
+    summary:
+      'Aksi massal: publish | draft | archive | author | delete (publish massal tidak mengirim push)',
+  })
+  bulk(@Body() dto: BulkSerambiPostDto) {
+    return this.service.adminBulk(dto);
+  }
+
   // ─── Post CRUD ───────────────────────────────────────────────────────
 
   @Get('posts')
-  @ApiOperation({ summary: 'List post (filter status, search, paginated)' })
+  @ApiOperation({
+    summary: 'List post (filter status/penulis, search, sort, paginated)',
+  })
   list(@Query() query: AdminPostListQueryDto) {
     return this.service.adminList(query);
   }
@@ -189,6 +212,12 @@ export class SerambiAdminController {
   @ApiOperation({ summary: 'Detail satu post (semua status)' })
   getById(@Param('id') id: string) {
     return this.service.adminGet(id);
+  }
+
+  @Post('posts/:id/duplicate')
+  @ApiOperation({ summary: 'Duplikat post sebagai draft baru' })
+  duplicate(@Param('id') id: string) {
+    return this.service.adminDuplicate(id);
   }
 
   @Patch('posts/:id')

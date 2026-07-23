@@ -19,6 +19,7 @@ import {
   AdminAuthorListQueryDto,
   AdminCommentListQueryDto,
   AdminPostListQueryDto,
+  BulkSerambiPostDto,
   CreateCommentDto,
   CreateSerambiAuthorDto,
   CreateSerambiPostDto,
@@ -357,23 +358,237 @@ export class SerambiService {
 
   // ─── Admin: post CRUD ────────────────────────────────────────────────
 
+  /**
+   * Terjemahkan `?sort=` jadi orderBy Prisma. Setiap cabang menyisakan
+   * `id desc` sebagai tiebreaker supaya paginasi tetap stabil saat kunci
+   * urut seri (mis. likeCount = 0 untuk banyak post).
+   */
+  private resolveOrderBy(
+    sort: string | undefined,
+  ): Prisma.SerambiPostOrderByWithRelationInput[] {
+    const tail: Prisma.SerambiPostOrderByWithRelationInput = { id: 'desc' };
+    switch (sort) {
+      case 'terlama':
+        return [{ createdAt: 'asc' }, tail];
+      case 'diperbarui':
+        return [{ updatedAt: 'desc' }, tail];
+      case 'disukai':
+        return [{ likeCount: 'desc' }, tail];
+      case 'dikomentari':
+        return [{ commentCount: 'desc' }, tail];
+      default:
+        return [{ createdAt: 'desc' }, tail];
+    }
+  }
+
   async adminList(
     query: AdminPostListQueryDto,
   ): Promise<ResponsePayload<unknown>> {
     const where: Prisma.SerambiPostWhereInput = {};
     if (query.status) where.status = query.status;
+    // "none" = post yang nama penulisnya ditulis manual (tanpa master).
+    if (query.authorId === 'none') where.authorId = null;
+    else if (query.authorId) where.authorId = query.authorId;
     if (query.q) {
-      where.body = { contains: query.q, mode: 'insensitive' };
+      where.OR = [
+        { body: { contains: query.q, mode: 'insensitive' } },
+        { authorName: { contains: query.q, mode: 'insensitive' } },
+      ];
     }
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.serambiPost.count({ where }),
       this.prisma.serambiPost.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: this.resolveOrderBy(query.sort),
         ...paginationArgs(query),
       }),
     ]);
     return ok(rows, 'Daftar post Serambi', paginationMeta(query, total));
+  }
+
+  /**
+   * Ringkasan angka untuk header panel admin Serambi: jumlah per status,
+   * total suka/komentar, post terjadwal berikutnya, terpopuler, sebaran
+   * penulis, dan antrian moderasi komentar. Satu round-trip — dipakai kartu
+   * statistik & filter cepat di /admin/serambi.
+   */
+  async adminStats(): Promise<ResponsePayload<unknown>> {
+    const since30 = new Date(Date.now() - 30 * 86_400_000);
+    const [
+      total,
+      published,
+      draft,
+      scheduled,
+      archived,
+      manualAuthor,
+      withImage,
+      totals,
+      publishedLast30,
+      commentsTotal,
+      commentsHidden,
+      nextScheduled,
+      topLiked,
+      authors,
+    ] = await this.prisma.$transaction([
+      this.prisma.serambiPost.count(),
+      this.prisma.serambiPost.count({ where: { status: 'published' } }),
+      this.prisma.serambiPost.count({ where: { status: 'draft' } }),
+      this.prisma.serambiPost.count({ where: { status: 'scheduled' } }),
+      this.prisma.serambiPost.count({ where: { status: 'archived' } }),
+      this.prisma.serambiPost.count({ where: { authorId: null } }),
+      this.prisma.serambiPost.count({ where: { NOT: { imageUrl: null } } }),
+      this.prisma.serambiPost.aggregate({
+        _sum: { likeCount: true, commentCount: true },
+      }),
+      this.prisma.serambiPost.count({
+        where: { status: 'published', createdAt: { gte: since30 } },
+      }),
+      this.prisma.serambiComment.count(),
+      this.prisma.serambiComment.count({ where: { status: 'hidden' } }),
+      this.prisma.serambiPost.findFirst({
+        where: { status: 'scheduled' },
+        orderBy: { scheduledAt: 'asc' },
+        select: { id: true, body: true, scheduledAt: true },
+      }),
+      this.prisma.serambiPost.findMany({
+        where: { status: 'published' },
+        orderBy: [{ likeCount: 'desc' }, { id: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          body: true,
+          likeCount: true,
+          commentCount: true,
+        },
+      }),
+      this.prisma.serambiAuthor.findMany({
+        orderBy: [{ active: 'desc' }, { name: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+          active: true,
+          _count: { select: { posts: true } },
+        },
+      }),
+    ]);
+
+    return ok(
+      {
+        total,
+        published,
+        draft,
+        scheduled,
+        archived,
+        manualAuthor,
+        withImage,
+        totalLikes: totals._sum.likeCount ?? 0,
+        totalComments: totals._sum.commentCount ?? 0,
+        publishedLast30,
+        comments: { total: commentsTotal, hidden: commentsHidden },
+        nextScheduled,
+        topLiked,
+        byAuthor: authors.map((a) => ({
+          id: a.id,
+          name: a.name,
+          avatarUrl: a.avatarUrl,
+          active: a.active,
+          jumlahPost: a._count.posts,
+        })),
+      },
+      'Statistik Serambi',
+    );
+  }
+
+  /** Salin post jadi draft baru (like/komentar tidak ikut disalin). */
+  async adminDuplicate(id: string): Promise<ResponsePayload<unknown>> {
+    const src = await this.prisma.serambiPost.findUnique({ where: { id } });
+    if (!src) {
+      throw new NotFoundException({
+        message: `Post #${id} tidak ditemukan`,
+        error: 'NOT_FOUND',
+      });
+    }
+    const row = await this.prisma.serambiPost.create({
+      data: {
+        body: src.body,
+        imageUrl: src.imageUrl,
+        authorName: src.authorName,
+        authorAvatarUrl: src.authorAvatarUrl,
+        authorId: src.authorId,
+        verified: src.verified,
+        status: 'draft',
+        scheduledAt: null,
+      },
+    });
+    return ok(row, 'Post disalin sebagai draft');
+  }
+
+  /**
+   * Aksi massal untuk sekumpulan post. Catatan: "publish" massal sengaja
+   * TIDAK mengirim push notification — menerbitkan 20 post sekaligus akan
+   * membanjiri pengguna dengan 20 notifikasi. Terbit satuan (row action /
+   * editor) tetap mengirim push seperti biasa.
+   */
+  async adminBulk(dto: BulkSerambiPostDto): Promise<ResponsePayload<unknown>> {
+    const ids = [...new Set(dto.ids)].filter((s) => typeof s === 'string' && s);
+    if (!ids.length) {
+      throw new BadRequestException({
+        message: 'Tidak ada post dipilih',
+        error: 'BAD_REQUEST',
+      });
+    }
+    let affected = 0;
+    switch (dto.action) {
+      case 'publish': {
+        const res = await this.prisma.serambiPost.updateMany({
+          where: { id: { in: ids } },
+          data: { status: 'published', scheduledAt: null },
+        });
+        affected = res.count;
+        break;
+      }
+      case 'draft':
+      case 'archive': {
+        const res = await this.prisma.serambiPost.updateMany({
+          where: { id: { in: ids } },
+          data: {
+            status: dto.action === 'draft' ? 'draft' : 'archived',
+            scheduledAt: null,
+          },
+        });
+        affected = res.count;
+        break;
+      }
+      case 'author': {
+        // Validasi dulu supaya id ngawur → 400 rapi, bukan FK error separuh jalan.
+        const picked = await this.resolveAuthor(dto.authorId);
+        if (!picked) {
+          throw new BadRequestException({
+            message: 'Pilih master penulis tujuan',
+            error: 'BAD_REQUEST',
+          });
+        }
+        const res = await this.prisma.serambiPost.updateMany({
+          where: { id: { in: ids } },
+          data: {
+            authorId: picked.id,
+            authorName: picked.name,
+            authorAvatarUrl: picked.avatarUrl,
+          },
+        });
+        affected = res.count;
+        break;
+      }
+      case 'delete': {
+        const res = await this.prisma.serambiPost.deleteMany({
+          where: { id: { in: ids } },
+        });
+        affected = res.count;
+        break;
+      }
+    }
+    return ok({ affected }, `${affected} post diperbarui`);
   }
 
   async adminGet(id: string): Promise<ResponsePayload<unknown>> {

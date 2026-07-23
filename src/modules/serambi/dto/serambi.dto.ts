@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -17,6 +20,24 @@ export const SERAMBI_POST_STATUS = [
   'scheduled',
   'published',
   'archived',
+] as const;
+
+/** Nilai `?sort=` yang diterima daftar post admin. */
+export const SERAMBI_POST_SORTS = [
+  'terbaru', // createdAt desc (default)
+  'terlama', // createdAt asc
+  'diperbarui', // updatedAt desc
+  'disukai', // likeCount desc
+  'dikomentari', // commentCount desc
+] as const;
+
+/** Aksi massal yang bisa diterapkan ke sekumpulan post. */
+export const SERAMBI_BULK_ACTIONS = [
+  'publish',
+  'draft',
+  'archive',
+  'author',
+  'delete',
 ] as const;
 
 /** Status moderasi sebuah komentar. */
@@ -170,11 +191,56 @@ export class AdminPostListQueryDto extends PaginationQueryDto {
   @IsIn(SERAMBI_POST_STATUS as unknown as string[])
   status?: string;
 
-  @ApiPropertyOptional({ description: 'Cari di isi post' })
+  @ApiPropertyOptional({ description: 'Cari di isi post / nama penulis' })
   @IsOptional()
   @IsString()
   @MaxLength(120)
   q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter per master penulis. Nilai "none" = post tanpa master penulis (nama ditulis manual).',
+  })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  authorId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Urutan hasil. Default: "terbaru".',
+    enum: SERAMBI_POST_SORTS,
+  })
+  @IsOptional()
+  @IsIn(SERAMBI_POST_SORTS as unknown as string[])
+  sort?: string;
+}
+
+/** Body POST /admin/serambi/posts/bulk. */
+export class BulkSerambiPostDto {
+  @ApiProperty({ type: [String], description: 'ID post yang dipilih' })
+  @IsArray()
+  @ArrayNotEmpty({ message: 'Tidak ada post dipilih' })
+  @ArrayMaxSize(200, { message: 'Maksimal 200 post per aksi massal' })
+  @IsString({ each: true })
+  ids!: string[];
+
+  @ApiProperty({
+    enum: SERAMBI_BULK_ACTIONS,
+    description:
+      'Aksi untuk semua id. "author" memindahkan post ke master penulis `authorId`. Aksi massal "publish" tidak mengirim push notification (anti-spam).',
+  })
+  @IsIn(SERAMBI_BULK_ACTIONS as unknown as string[], {
+    message: 'Aksi massal tidak valid',
+  })
+  action!: (typeof SERAMBI_BULK_ACTIONS)[number];
+
+  @ApiPropertyOptional({
+    description: 'Master penulis tujuan untuk action "author".',
+  })
+  @IsOptional()
+  @Transform(trimOrUndef)
+  @IsString()
+  authorId?: string;
 }
 
 // ─── Admin: komentar ───────────────────────────────────────────────────

@@ -143,11 +143,45 @@ export interface ArtikelListItem {
   tags: string[];
   menitBaca: number;
   views: number;
+  likeCount?: number;
   publishedAt?: string | null;
   scheduledAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   category?: { id: number; slug: string; nama: string } | null;
+}
+
+/** Ringkasan angka panel admin artikel (GET /admin/artikel/stats). */
+export interface ArtikelAdminStats {
+  total: number;
+  published: number;
+  draft: number;
+  scheduled: number;
+  featured: number;
+  uncategorized: number;
+  totalViews: number;
+  totalLikes: number;
+  publishedLast30: number;
+  nextScheduled: {
+    id: number;
+    judul: string;
+    slug: string;
+    scheduledAt: string | null;
+  } | null;
+  topViewed: {
+    id: number;
+    slug: string;
+    judul: string;
+    views: number;
+    likeCount: number;
+  }[];
+  byCategory: {
+    id: number;
+    slug: string;
+    nama: string;
+    isActive: boolean;
+    jumlahArtikel: number;
+  }[];
 }
 
 /** Full article (detail + admin edit) — adds the HTML body and relations. */
@@ -539,6 +573,40 @@ export interface SerambiPost {
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Ringkasan angka panel admin Serambi (GET /admin/serambi/stats). */
+export interface SerambiAdminStats {
+  total: number;
+  published: number;
+  draft: number;
+  scheduled: number;
+  archived: number;
+  /** Post yang nama penulisnya ditulis manual (tanpa master penulis). */
+  manualAuthor: number;
+  withImage: number;
+  totalLikes: number;
+  totalComments: number;
+  publishedLast30: number;
+  comments: { total: number; hidden: number };
+  nextScheduled: {
+    id: string;
+    body: string;
+    scheduledAt: string | null;
+  } | null;
+  topLiked: {
+    id: string;
+    body: string;
+    likeCount: number;
+    commentCount: number;
+  }[];
+  byAuthor: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+    active: boolean;
+    jumlahPost: number;
+  }[];
 }
 
 /** Master penulis Serambi (dipilih di form post daripada ketik manual). */

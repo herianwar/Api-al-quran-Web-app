@@ -12,13 +12,15 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
 import { API_URL, apiFetch, fetcherFull, tokenStore } from "@/lib/api";
 import type { SerambiAuthor } from "@/lib/types";
 import { ErrorBox, Spinner } from "@/components/Spinner";
+import { ConfirmDialog, type ConfirmOptions } from "@/components/admin/ConfirmDialog";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { RefreshButton } from "@/components/admin/RefreshButton";
 
 /** Origin backend tanpa suffix /api/vN — untuk absolutkan URL relatif. */
 const ORIGIN = API_URL.replace(/\/api\/v\d+\/?$/, "");
@@ -31,11 +33,26 @@ export default function AdminSerambiAuthorsPage() {
   const [search, setSearch] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [editing, setEditing] = useState<SerambiAuthor | "new" | null>(null);
+  const [toast, setToast] = useState<{ msg: string; tone: "ok" | "err" } | null>(
+    null,
+  );
+  const [confirm, setConfirm] = useState<
+    (ConfirmOptions & { onConfirm: () => void }) | null
+  >(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(search.trim()), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const notify = (msg: string, tone: "ok" | "err" = "ok") =>
+    setToast({ msg, tone });
 
   const params = new URLSearchParams({ ...(debouncedQ ? { q: debouncedQ } : {}) });
   const { data, error, isLoading, mutate } = useSWR(
@@ -45,9 +62,9 @@ export default function AdminSerambiAuthorsPage() {
   );
   const rows = data?.data ?? [];
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     await mutate();
-  }
+  }, [mutate]);
 
   async function toggleActive(a: SerambiAuthor) {
     try {
@@ -56,24 +73,36 @@ export default function AdminSerambiAuthorsPage() {
         body: JSON.stringify({ active: !a.active }),
       });
       await refresh();
-    } catch {
-      /* diabaikan — UI akan tetap konsisten setelah revalidate berikutnya */
+      notify(a.active ? `"${a.name}" dinonaktifkan.` : `"${a.name}" diaktifkan.`);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "Gagal mengubah status", "err");
     }
   }
 
-  async function remove(a: SerambiAuthor) {
+  function askRemove(a: SerambiAuthor) {
     const count = a._count?.posts ?? 0;
-    const extra =
-      count > 0
-        ? `\n\n${count} post memakai penulis ini — post tetap ada, nama & avatar yang sudah tersimpan tidak berubah.`
-        : "";
-    if (!confirm(`Hapus penulis "${a.name}"?${extra}`)) return;
-    try {
-      await apiFetch(`/admin/serambi/authors/${a.id}`, { method: "DELETE" });
-      await refresh();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal menghapus penulis");
-    }
+    setConfirm({
+      title: `Hapus penulis "${a.name}"?`,
+      message:
+        count > 0
+          ? `${count.toLocaleString("id-ID")} post memakai penulis ini — post tetap ada, nama & avatar yang sudah tersimpan di post tidak berubah.`
+          : "Penulis akan dihapus dari daftar pilihan saat membuat post.",
+      confirmLabel: "Hapus penulis",
+      tone: "danger",
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await apiFetch(`/admin/serambi/authors/${a.id}`, { method: "DELETE" });
+          await refresh();
+          notify("Penulis dihapus.");
+        } catch (e) {
+          notify(
+            e instanceof Error ? e.message : "Gagal menghapus penulis",
+            "err",
+          );
+        }
+      },
+    });
   }
 
   return (
@@ -93,14 +122,17 @@ export default function AdminSerambiAuthorsPage() {
             : "Kelola nama & avatar penulis — dipilih saat membuat post."
         }
         action={
-          <button
-            type="button"
-            onClick={() => setEditing("new")}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-          >
-            <Plus size={16} />
-            Penulis baru
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <RefreshButton onRefresh={refresh} />
+            <button
+              type="button"
+              onClick={() => setEditing("new")}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+            >
+              <Plus size={16} />
+              Penulis baru
+            </button>
+          </div>
         }
       />
 
@@ -165,7 +197,12 @@ export default function AdminSerambiAuthorsPage() {
                     {a.name}
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    {(a._count?.posts ?? 0).toLocaleString("id-ID")} post
+                    <Link
+                      href={`/admin/serambi?author=${a.id}`}
+                      className="font-medium text-slate-500 hover:text-emerald-700 hover:underline"
+                    >
+                      {(a._count?.posts ?? 0).toLocaleString("id-ID")} post
+                    </Link>
                     {!a.active && " · nonaktif"}
                   </p>
                 </div>
@@ -192,7 +229,7 @@ export default function AdminSerambiAuthorsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => remove(a)}
+                  onClick={() => askRemove(a)}
                   title="Hapus"
                   aria-label="Hapus"
                   className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-rose-500 hover:border-rose-300 hover:bg-rose-50"
@@ -209,9 +246,33 @@ export default function AdminSerambiAuthorsPage() {
         <AuthorEditor
           author={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={refresh}
+          onSaved={async (msg) => {
+            await refresh();
+            notify(msg);
+          }}
         />
       )}
+
+      {toast && (
+        <div
+          role="status"
+          className={`fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg ${
+            toast.tone === "ok" ? "bg-slate-900 text-white" : "bg-rose-600 text-white"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        tone={confirm?.tone}
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => setConfirm(null)}
+      />
     </div>
   );
 }
@@ -223,7 +284,7 @@ function AuthorEditor({
 }: {
   author: SerambiAuthor | null;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (msg: string) => Promise<void> | void;
 }) {
   const [name, setName] = useState(author?.name ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
@@ -287,7 +348,7 @@ function AuthorEditor({
           body: JSON.stringify(payload),
         });
       }
-      await onSaved();
+      await onSaved(isEdit ? "Penulis diperbarui." : "Penulis dibuat.");
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Gagal menyimpan");

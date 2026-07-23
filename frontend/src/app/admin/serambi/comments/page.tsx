@@ -5,30 +5,36 @@ import {
   Eye,
   EyeOff,
   MessageCircle,
+  MessageSquareQuote,
   Search,
   Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import useSWR from "swr";
-import { apiFetch, fetcherFull } from "@/lib/api";
-import type { SerambiComment } from "@/lib/types";
-import { ErrorBox, Spinner } from "@/components/Spinner";
+import { apiFetch, fetcher, fetcherFull } from "@/lib/api";
+import type { SerambiAdminStats, SerambiComment } from "@/lib/types";
+import { ErrorBox } from "@/components/Spinner";
+import { Skeleton } from "@/components/Skeleton";
+import { ConfirmDialog, type ConfirmOptions } from "@/components/admin/ConfirmDialog";
 import { DataTable, Pagination } from "@/components/admin/DataTable";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { RefreshButton } from "@/components/admin/RefreshButton";
 
 const STATUS: Record<string, { label: string; badge: string }> = {
   visible: { label: "Tampil", badge: "bg-emerald-100 text-emerald-700" },
   hidden: { label: "Disembunyikan", badge: "bg-slate-200 text-slate-600" },
 };
-
-const STATUS_TABS: { value: string; label: string }[] = [
-  { value: "", label: "Semua" },
-  { value: "visible", label: "Tampil" },
-  { value: "hidden", label: "Disembunyikan" },
-];
 
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS[status] ?? STATUS.visible;
@@ -53,80 +59,207 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString("id-ID");
 }
 
-export default function AdminSerambiCommentsPage() {
-  const [search, setSearch] = useState("");
-  const [debouncedQ, setDebouncedQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
+function num(n?: number | null): string {
+  return (n ?? 0).toLocaleString("id-ID");
+}
 
+function excerpt(body: string, max = 70): string {
+  const one = body.replace(/\s+/g, " ").trim();
+  return one.length > max ? `${one.slice(0, max).trimEnd()}…` : one;
+}
+
+const LIMIT = 20;
+
+export default function AdminSerambiCommentsPage() {
+  return (
+    <Suspense fallback={<ListSkeleton />}>
+      <CommentsInner />
+    </Suspense>
+  );
+}
+
+function CommentsInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+
+  // Filter hidup di URL — "Komentar post ini" dari daftar post masuk ke sini.
+  const q = sp.get("q") ?? "";
+  const status = sp.get("status") ?? "";
+  const postId = sp.get("postId") ?? "";
+  const page = Number(sp.get("page")) || 1;
+
+  const setParams = useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(sp.toString());
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === "") next.delete(k);
+        else next.set(k, v);
+      }
+      if (!("page" in patch)) next.delete("page");
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [sp, router, pathname],
+  );
+
+  const [qInput, setQInput] = useState(q);
+  const [qSynced, setQSynced] = useState(q);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  if (qSynced !== q) {
+    setQSynced(q);
+    setQInput(q);
+  }
   useEffect(() => {
+    const trimmed = qInput.trim();
+    if (trimmed === q) return;
     const t = setTimeout(() => {
-      setDebouncedQ(search.trim());
-      setPage(1);
+      setParams({ q: trimmed.length >= 2 ? trimmed : null });
     }, 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [qInput, q, setParams]);
 
-  const params = new URLSearchParams({
-    page: String(page),
-    limit: "20",
-    ...(debouncedQ ? { q: debouncedQ } : {}),
-    ...(status ? { status } : {}),
-  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const listKey = useMemo(() => {
+    const p = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+    if (q) p.set("q", q);
+    if (status) p.set("status", status);
+    if (postId) p.set("postId", postId);
+    return `/admin/serambi/comments?${p.toString()}`;
+  }, [page, q, status, postId]);
+
   const { data, error, isLoading, isValidating, mutate } = useSWR(
-    `/admin/serambi/comments?${params.toString()}`,
+    listKey,
     fetcherFull<SerambiComment[]>,
     { keepPreviousData: true },
   );
+  const { data: stats, mutate: mutateStats } = useSWR<SerambiAdminStats>(
+    "/admin/serambi/stats",
+    fetcher,
+  );
 
-  const rows = data?.data ?? [];
+  const rows = useMemo(() => data?.data ?? [], [data]);
   const total = data?.meta?.total;
-  const filtering = !!debouncedQ || !!status;
-  const description =
-    typeof total === "number"
-      ? filtering
-        ? `${total.toLocaleString("id-ID")} hasil cocok`
-        : `${total.toLocaleString("id-ID")} komentar`
-      : "Moderasi komentar pengguna di feed Serambi.";
+  const filtering = !!q || !!status || !!postId;
+
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; tone: "ok" | "err" } | null>(
+    null,
+  );
+  const [confirm, setConfirm] = useState<
+    (ConfirmOptions & { onConfirm: () => void }) | null
+  >(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const notify = (msg: string, tone: "ok" | "err" = "ok") =>
+    setToast({ msg, tone });
+
+  const refresh = useCallback(
+    () => Promise.all([mutate(), mutateStats()]),
+    [mutate, mutateStats],
+  );
+
+  // Isi post yang sedang difilter (dibawa dari baris komentar mana pun).
+  const filteredPostBody = rows.find((c) => c.post?.id === postId)?.post?.body;
 
   async function toggleHide(c: SerambiComment) {
     const next = c.status === "visible" ? "hidden" : "visible";
+    setBusy(true);
     try {
       await apiFetch(`/admin/serambi/comments/${c.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: next }),
       });
-      await mutate();
+      await refresh();
+      notify(next === "hidden" ? "Komentar disembunyikan." : "Komentar ditampilkan.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal mengubah status");
+      notify(e instanceof Error ? e.message : "Gagal mengubah status", "err");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function remove(c: SerambiComment) {
-    if (!confirm("Hapus komentar ini permanen?")) return;
-    try {
-      await apiFetch(`/admin/serambi/comments/${c.id}`, { method: "DELETE" });
-      await mutate();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal menghapus");
-    }
+  function askRemove(c: SerambiComment) {
+    setConfirm({
+      title: "Hapus komentar ini?",
+      message: `"${excerpt(c.body, 90)}" akan dihapus permanen dan jumlah komentar pada post ikut berkurang.`,
+      confirmLabel: "Hapus permanen",
+      tone: "danger",
+      onConfirm: async () => {
+        setConfirm(null);
+        setBusy(true);
+        try {
+          await apiFetch(`/admin/serambi/comments/${c.id}`, { method: "DELETE" });
+          await refresh();
+          notify("Komentar dihapus.");
+        } catch (e) {
+          notify(e instanceof Error ? e.message : "Gagal menghapus", "err");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   }
+
+  const description =
+    typeof total === "number"
+      ? filtering
+        ? `${num(total)} hasil cocok`
+        : `${num(total)} komentar · ${num(stats?.comments.hidden)} disembunyikan`
+      : "Moderasi komentar pengguna di feed Serambi.";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-16">
       <PageHeader
         title="Moderasi Komentar Serambi"
         description={description}
         action={
-          <Link
-            href="/admin/serambi"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500 hover:text-emerald-700"
-          >
-            <ArrowLeft size={15} />
-            Kembali ke post
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <RefreshButton onRefresh={refresh} />
+            <Link
+              href="/admin/serambi"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-500 hover:text-emerald-700"
+            >
+              <ArrowLeft size={15} />
+              Kembali ke post
+            </Link>
+          </div>
         }
       />
+
+      {/* Banner filter per-post */}
+      {postId && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          <MessageSquareQuote size={16} className="shrink-0" />
+          <span className="font-semibold">Komentar untuk satu post:</span>
+          <span className="min-w-0 truncate">
+            {filteredPostBody ? excerpt(filteredPostBody, 70) : postId}
+          </span>
+          <button
+            onClick={() => setParams({ postId: null })}
+            className="ml-auto text-xs font-semibold text-emerald-700 hover:underline"
+          >
+            Tampilkan semua komentar
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">
@@ -135,15 +268,16 @@ export default function AdminSerambiCommentsPage() {
           className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
         />
         <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari isi komentar…"
+          ref={searchRef}
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+          placeholder="Cari isi komentar…  (tekan / )"
           className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 shadow-sm"
         />
-        {search && (
+        {qInput && (
           <button
             type="button"
-            onClick={() => setSearch("")}
+            onClick={() => setQInput("")}
             aria-label="Bersihkan pencarian"
             className="absolute right-2.5 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           >
@@ -152,42 +286,60 @@ export default function AdminSerambiCommentsPage() {
         )}
       </div>
 
-      {/* Status tabs */}
-      <div className="inline-flex flex-wrap rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
-        {STATUS_TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => {
-              setStatus(t.value);
-              setPage(1);
-            }}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
-              status === t.value
-                ? "bg-emerald-600 text-white shadow-sm"
-                : "text-slate-600 hover:text-emerald-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Filter status */}
+      <div className="flex flex-wrap gap-2">
+        <FilterPill
+          active={!status}
+          onClick={() => setParams({ status: null })}
+          count={stats?.comments.total}
+        >
+          Semua
+        </FilterPill>
+        <FilterPill
+          active={status === "visible"}
+          onClick={() => setParams({ status: "visible" })}
+          count={
+            stats ? stats.comments.total - stats.comments.hidden : undefined
+          }
+          tone="emerald"
+        >
+          Tampil
+        </FilterPill>
+        <FilterPill
+          active={status === "hidden"}
+          onClick={() => setParams({ status: "hidden" })}
+          count={stats?.comments.hidden}
+          tone="slate"
+        >
+          Disembunyikan
+        </FilterPill>
       </div>
 
-      {isLoading && !data && <Spinner label="Memuat komentar…" />}
-      {error && <ErrorBox message={error.message} />}
+      {error && <ErrorBox message={(error as Error).message} />}
 
-      {data && rows.length === 0 && (
+      {isLoading && !data ? (
+        <ListSkeleton />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={MessageCircle}
-          title="Belum ada komentar"
+          title={filtering ? "Tidak ada komentar cocok" : "Belum ada komentar"}
           description={
             filtering
-              ? "Tidak ada komentar cocok dengan filter ini."
+              ? "Coba ubah kata kunci atau bersihkan filter yang aktif."
               : "Belum ada komentar dari pengguna."
           }
+          action={
+            filtering ? (
+              <button
+                onClick={() => setParams({ q: null, status: null, postId: null })}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Bersihkan filter
+              </button>
+            ) : undefined
+          }
         />
-      )}
-
-      {data && rows.length > 0 && (
+      ) : (
         <div
           className={
             isValidating ? "opacity-60 transition-opacity" : "transition-opacity"
@@ -237,13 +389,25 @@ export default function AdminSerambiCommentsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500 max-w-[12rem]">
-                      <span className="line-clamp-1">{c.post?.body ?? "—"}</span>
+                      {c.post ? (
+                        <button
+                          onClick={() => setParams({ postId: c.post!.id })}
+                          className="line-clamp-1 text-left hover:text-emerald-700"
+                          title="Lihat semua komentar post ini"
+                        >
+                          {c.post.body}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={c.status} />
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {relativeTime(c.createdAt)}
+                      <span title={new Date(c.createdAt).toLocaleString("id-ID")}>
+                        {relativeTime(c.createdAt)}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -251,7 +415,8 @@ export default function AdminSerambiCommentsPage() {
                           title={
                             c.status === "visible" ? "Sembunyikan" : "Tampilkan"
                           }
-                          onClick={() => toggleHide(c)}
+                          disabled={busy}
+                          onClick={() => void toggleHide(c)}
                         >
                           {c.status === "visible" ? (
                             <EyeOff size={15} />
@@ -259,7 +424,12 @@ export default function AdminSerambiCommentsPage() {
                             <Eye size={15} />
                           )}
                         </IconBtn>
-                        <IconBtn title="Hapus" danger onClick={() => remove(c)}>
+                        <IconBtn
+                          title="Hapus"
+                          danger
+                          disabled={busy}
+                          onClick={() => askRemove(c)}
+                        >
                           <Trash2 size={15} />
                         </IconBtn>
                       </div>
@@ -295,8 +465,9 @@ export default function AdminSerambiCommentsPage() {
                 <div className="mt-3 flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => toggleHide(c)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600"
+                    disabled={busy}
+                    onClick={() => void toggleHide(c)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40"
                   >
                     {c.status === "visible" ? (
                       <>
@@ -310,8 +481,9 @@ export default function AdminSerambiCommentsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => remove(c)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600"
+                    disabled={busy}
+                    onClick={() => askRemove(c)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 disabled:opacity-40"
                   >
                     <Trash2 size={13} /> Hapus
                   </button>
@@ -321,16 +493,71 @@ export default function AdminSerambiCommentsPage() {
           </ul>
 
           <Pagination
-            page={data.meta?.page ?? 1}
-            totalPages={data.meta?.totalPages ?? 1}
-            total={data.meta?.total}
-            hasMore={!!data.meta?.hasMore}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => p + 1)}
+            page={data?.meta?.page ?? 1}
+            totalPages={data?.meta?.totalPages ?? 1}
+            total={data?.meta?.total}
+            hasMore={!!data?.meta?.hasMore}
+            onPrev={() => setParams({ page: String(Math.max(1, page - 1)) })}
+            onNext={() => setParams({ page: String(page + 1) })}
           />
         </div>
       )}
+
+      {toast && (
+        <div
+          role="status"
+          className={`fixed bottom-8 left-1/2 z-40 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg ${
+            toast.tone === "ok" ? "bg-slate-900 text-white" : "bg-rose-600 text-white"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        tone={confirm?.tone}
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => setConfirm(null)}
+      />
     </div>
+  );
+}
+
+function FilterPill({
+  children,
+  active,
+  onClick,
+  count,
+  tone = "emerald",
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  count?: number;
+  tone?: "emerald" | "slate";
+}) {
+  const activeCls: Record<string, string> = {
+    emerald: "border-emerald-500 bg-emerald-50 text-emerald-700",
+    slate: "border-slate-400 bg-slate-100 text-slate-700",
+  };
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-sm transition ${
+        active
+          ? activeCls[tone]
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+      }`}
+    >
+      {children}
+      {typeof count === "number" && (
+        <span className="tabular-nums opacity-70">{num(count)}</span>
+      )}
+    </button>
   );
 }
 
@@ -339,11 +566,13 @@ function IconBtn({
   title,
   onClick,
   danger,
+  disabled,
 }: {
   children: React.ReactNode;
   title: string;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -351,7 +580,8 @@ function IconBtn({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={`grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white ${
+      disabled={disabled}
+      className={`grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 ${
         danger
           ? "text-rose-500 hover:bg-rose-50 hover:border-rose-300"
           : "text-slate-500 hover:bg-slate-50 hover:border-emerald-400 hover:text-emerald-600"
@@ -359,5 +589,22 @@ function IconBtn({
     >
       {children}
     </button>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="card divide-y divide-slate-100">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 p-4">
+          <div className="flex-1 space-y-2">
+            <Skeleton width="65%" height={14} />
+            <Skeleton width="30%" height={11} />
+          </div>
+          <Skeleton width={32} height={32} rounded="lg" />
+          <Skeleton width={32} height={32} rounded="lg" />
+        </div>
+      ))}
+    </div>
   );
 }
