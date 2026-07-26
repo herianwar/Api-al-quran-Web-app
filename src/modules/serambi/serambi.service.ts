@@ -831,6 +831,17 @@ export class SerambiService {
     }
   }
 
+  /**
+   * Edit master penulis, lalu **rambatkan** nama/avatar baru ke snapshot di
+   * semua post & artikel yang tertaut (`authorId`).
+   *
+   * Kolom `authorName`/`authorAvatarUrl` di post sengaja didenormalisasi agar
+   * feed tidak perlu join. Konsekuensinya: tanpa propagasi ini, meng-upload
+   * foto penulis tidak akan pernah terlihat di post yang sudah ada — kasus
+   * yang paling sering dilakukan admin (bikin penulis dulu, fotonya belakangan).
+   * Hanya kolom yang benar-benar berubah yang dirambatkan, dan `active`
+   * sengaja TIDAK ikut (itu status master, bukan bagian dari snapshot).
+   */
   async adminUpdateAuthor(
     id: string,
     dto: UpdateSerambiAuthorDto,
@@ -845,7 +856,42 @@ export class SerambiService {
         where: { id },
         data,
       });
-      return ok(row, 'Penulis diperbarui');
+
+      const snapshot: Prisma.SerambiPostUpdateManyMutationInput = {};
+      if (data.name !== undefined) snapshot.authorName = row.name;
+      if (data.avatarUrl !== undefined) {
+        snapshot.authorAvatarUrl = row.avatarUrl;
+      }
+      let syncedPosts = 0;
+      let syncedArtikel = 0;
+      if (Object.keys(snapshot).length > 0) {
+        const [posts, artikel] = await this.prisma.$transaction([
+          this.prisma.serambiPost.updateMany({
+            where: { authorId: id },
+            data: snapshot,
+          }),
+          // Artikel ikut memakai master penulis yang sama, tapi hanya
+          // menyimpan nama (`penulis`) — tidak ada kolom avatar di sana.
+          this.prisma.artikel.updateMany({
+            where: { authorId: id },
+            data:
+              data.name !== undefined
+                ? { penulis: row.name }
+                : // Tidak ada yang perlu diubah; updateMany dengan data kosong
+                  // tetap sah dan mengembalikan count apa adanya.
+                  {},
+          }),
+        ]);
+        syncedPosts = posts.count;
+        syncedArtikel = data.name !== undefined ? artikel.count : 0;
+      }
+
+      return ok(
+        { ...row, syncedPosts, syncedArtikel },
+        syncedPosts + syncedArtikel > 0
+          ? `Penulis diperbarui (${syncedPosts} post & ${syncedArtikel} artikel disinkronkan)`
+          : 'Penulis diperbarui',
+      );
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
