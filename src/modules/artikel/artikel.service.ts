@@ -634,6 +634,37 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
 
   /** @param publicOnly when true, force status=published (ignores ?status).
    *  @param userId when set (logged-in), fills per-item `liked`/`saved`. */
+  /**
+   * Translate `?sort=` into a Prisma orderBy. Unknown/absent values fall back
+   * to the historical defaults (publishedAt for public, updatedAt for admin)
+   * so existing clients keep the ordering they were built against.
+   */
+  private resolveOrderBy(
+    sort: string | undefined,
+    publicOnly: boolean,
+  ): Prisma.ArtikelOrderByWithRelationInput[] {
+    const tail: Prisma.ArtikelOrderByWithRelationInput = { id: 'desc' };
+    switch (sort) {
+      case 'dibuat':
+        return [{ createdAt: 'desc' }, tail];
+      case 'terbit':
+        // Drafts have no publishedAt — keep them last instead of first.
+        return [{ publishedAt: { sort: 'desc', nulls: 'last' } }, tail];
+      case 'populer':
+        return [{ views: 'desc' }, tail];
+      case 'disukai':
+        return [{ likeCount: 'desc' }, tail];
+      case 'judul':
+        return [{ judul: 'asc' }, tail];
+      case 'terbaru':
+        return [{ updatedAt: 'desc' }, tail];
+      default:
+        return publicOnly
+          ? [{ publishedAt: 'desc' }, tail]
+          : [{ updatedAt: 'desc' }, tail];
+    }
+  }
+
   async list(
     query: ArtikelListQueryDto,
     publicOnly: boolean,
@@ -659,6 +690,10 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
     if (typeof query.featured === 'boolean') {
       where.isFeatured = query.featured;
     }
+    // Admin-only helper: surface articles that never got a category.
+    if (!publicOnly && query.uncategorized) {
+      where.categoryId = null;
+    }
     if (query.q) {
       where.OR = [
         { judul: { contains: query.q, mode: 'insensitive' } },
@@ -671,10 +706,10 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
       if (!isNaN(d.getTime())) where.updatedAt = { gt: d };
     }
 
-    // Published list ordered by publish date; admin list by recency.
-    const orderBy: Prisma.ArtikelOrderByWithRelationInput[] = publicOnly
-      ? [{ publishedAt: 'desc' }, { id: 'desc' }]
-      : [{ updatedAt: 'desc' }];
+    // Published list ordered by publish date; admin list by recency. `?sort=`
+    // overrides both — every branch keeps `id desc` as the tiebreaker so
+    // pagination stays stable when the sort key ties (e.g. views = 0).
+    const orderBy = this.resolveOrderBy(query.sort, publicOnly);
 
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.artikel.count({ where }),
@@ -1139,6 +1174,17 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
         affected = res.count;
         break;
       }
+      case 'category': {
+        // null/absent = detach. Validate first so a bad id 404s instead of
+        // failing halfway through with a raw FK error.
+        if (dto.categoryId) await this.ensureKategori(dto.categoryId);
+        const res = await this.prisma.artikel.updateMany({
+          where: { id: { in: ids } },
+          data: { categoryId: dto.categoryId ?? null },
+        });
+        affected = res.count;
+        break;
+      }
       case 'delete': {
         const rows = await this.prisma.artikel.findMany({
           where: { id: { in: ids } },
@@ -1169,6 +1215,89 @@ export class ArtikelService implements OnModuleInit, OnModuleDestroy {
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([tag, count]) => ({ tag, count }));
     return ok(tags, 'Daftar tag');
+  }
+
+  /**
+   * Ringkasan angka untuk header panel admin artikel: jumlah per status,
+   * total pembacaan/suka, artikel terjadwal berikutnya, terpopuler, serta
+   * sebaran kategori. Satu round-trip — dipakai untuk kartu statistik &
+   * filter cepat di /admin/content/artikel.
+   */
+  async adminStats(): Promise<ResponsePayload<unknown>> {
+    const since30 = new Date(Date.now() - 30 * 86_400_000);
+    const [
+      total,
+      published,
+      draft,
+      scheduled,
+      featured,
+      totals,
+      publishedLast30,
+      uncategorized,
+      nextScheduled,
+      topViewed,
+      categories,
+    ] = await this.prisma.$transaction([
+      this.prisma.artikel.count(),
+      this.prisma.artikel.count({ where: { status: 'published' } }),
+      this.prisma.artikel.count({ where: { status: 'draft' } }),
+      this.prisma.artikel.count({ where: { status: 'scheduled' } }),
+      this.prisma.artikel.count({ where: { isFeatured: true } }),
+      this.prisma.artikel.aggregate({ _sum: { views: true, likeCount: true } }),
+      this.prisma.artikel.count({ where: { publishedAt: { gte: since30 } } }),
+      this.prisma.artikel.count({ where: { categoryId: null } }),
+      this.prisma.artikel.findFirst({
+        where: { status: 'scheduled' },
+        orderBy: { scheduledAt: 'asc' },
+        select: { id: true, judul: true, slug: true, scheduledAt: true },
+      }),
+      this.prisma.artikel.findMany({
+        where: { status: 'published' },
+        orderBy: [{ views: 'desc' }, { id: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          slug: true,
+          judul: true,
+          views: true,
+          likeCount: true,
+        },
+      }),
+      this.prisma.artikelKategori.findMany({
+        orderBy: [{ urutan: 'asc' }, { nama: 'asc' }],
+        select: {
+          id: true,
+          slug: true,
+          nama: true,
+          isActive: true,
+          _count: { select: { artikel: true } },
+        },
+      }),
+    ]);
+
+    return ok(
+      {
+        total,
+        published,
+        draft,
+        scheduled,
+        featured,
+        uncategorized,
+        totalViews: totals._sum.views ?? 0,
+        totalLikes: totals._sum.likeCount ?? 0,
+        publishedLast30,
+        nextScheduled,
+        topViewed,
+        byCategory: categories.map((c) => ({
+          id: c.id,
+          slug: c.slug,
+          nama: c.nama,
+          isActive: c.isActive,
+          jumlahArtikel: c._count.artikel,
+        })),
+      },
+      'Statistik artikel',
+    );
   }
 
   /** Unlink uploaded files that no remaining article references (body or

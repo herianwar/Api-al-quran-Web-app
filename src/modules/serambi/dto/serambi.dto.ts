@@ -29,6 +29,7 @@ export const SERAMBI_POST_SORTS = [
   'diperbarui', // updatedAt desc
   'disukai', // likeCount desc
   'dikomentari', // commentCount desc
+  'jadwal', // scheduledAt asc — yang paling dekat tayang lebih dulu
 ] as const;
 
 /** Aksi massal yang bisa diterapkan ke sekumpulan post. */

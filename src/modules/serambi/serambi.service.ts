@@ -38,6 +38,27 @@ export const SERAMBI_UPLOAD_DIR = join(
   'serambi',
 );
 
+/** Selisih WIB (UTC+7) dari UTC, dalam milidetik. */
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/**
+ * Instant UTC untuk pukul 00:00 WIB pada hari ke-`offsetDays` dari hari ini,
+ * apa pun TZ server (server prod berjalan di UTC). Dipakai untuk memisahkan
+ * antrean tayang jadi "hari ini / besok / 7 hari" menurut kalender Indonesia,
+ * bukan kalender UTC — kalau tidak, slot 05:30 WIB (= 22:30 UTC H-1) akan
+ * terhitung sebagai hari kemarin.
+ */
+function wibDayStart(offsetDays = 0): Date {
+  const wibNow = new Date(Date.now() + WIB_OFFSET_MS);
+  return new Date(
+    Date.UTC(
+      wibNow.getUTCFullYear(),
+      wibNow.getUTCMonth(),
+      wibNow.getUTCDate() + offsetDays,
+    ) - WIB_OFFSET_MS,
+  );
+}
+
 /** Kolom penulis komentar yang di-join (nama publik + avatar). */
 const COMMENT_USER_SELECT = {
   id: true,
@@ -376,6 +397,10 @@ export class SerambiService {
         return [{ likeCount: 'desc' }, tail];
       case 'dikomentari':
         return [{ commentCount: 'desc' }, tail];
+      case 'jadwal':
+        // Terdekat tayang lebih dulu. Post tanpa scheduledAt (draft/terbit/arsip)
+        // didorong ke belakang supaya antrean jadwal tetap terbaca di atas.
+        return [{ scheduledAt: { sort: 'asc', nulls: 'last' } }, tail];
       default:
         return [{ createdAt: 'desc' }, tail];
     }
@@ -395,11 +420,16 @@ export class SerambiService {
         { authorName: { contains: query.q, mode: 'insensitive' } },
       ];
     }
+    // Saat menyaring status "scheduled", yang dicari admin hampir selalu
+    // "apa yang tayang paling dekat" — jadi urutan jadwal jadi default di sana
+    // (tetap bisa ditimpa dengan ?sort= eksplisit).
+    const sort =
+      query.sort ?? (query.status === 'scheduled' ? 'jadwal' : undefined);
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.serambiPost.count({ where }),
       this.prisma.serambiPost.findMany({
         where,
-        orderBy: this.resolveOrderBy(query.sort),
+        orderBy: this.resolveOrderBy(sort),
         ...paginationArgs(query),
       }),
     ]);
@@ -429,6 +459,11 @@ export class SerambiService {
       nextScheduled,
       topLiked,
       authors,
+      dueNow,
+      dueToday,
+      dueTomorrow,
+      dueNext7,
+      upcoming,
     ] = await this.prisma.$transaction([
       this.prisma.serambiPost.count(),
       this.prisma.serambiPost.count({ where: { status: 'published' } }),
@@ -471,6 +506,36 @@ export class SerambiService {
           _count: { select: { posts: true } },
         },
       }),
+      // Sudah lewat waktunya tapi belum dipromosikan — sweep-nya dipicu trafik
+      // feed publik, jadi angka ini normal > 0 sesaat dan harus kembali 0.
+      this.prisma.serambiPost.count({
+        where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
+      }),
+      this.prisma.serambiPost.count({
+        where: { status: 'scheduled', scheduledAt: { lt: wibDayStart(1) } },
+      }),
+      this.prisma.serambiPost.count({
+        where: {
+          status: 'scheduled',
+          scheduledAt: { gte: wibDayStart(1), lt: wibDayStart(2) },
+        },
+      }),
+      this.prisma.serambiPost.count({
+        where: { status: 'scheduled', scheduledAt: { lt: wibDayStart(7) } },
+      }),
+      // Antrean tayang terdekat untuk panel "Akan tayang" di panel admin.
+      this.prisma.serambiPost.findMany({
+        where: { status: 'scheduled' },
+        orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
+        take: 12,
+        select: {
+          id: true,
+          body: true,
+          scheduledAt: true,
+          imageUrl: true,
+          authorName: true,
+        },
+      }),
     ]);
 
     return ok(
@@ -487,6 +552,14 @@ export class SerambiService {
         publishedLast30,
         comments: { total: commentsTotal, hidden: commentsHidden },
         nextScheduled,
+        /** Ringkasan antrean tayang, dihitung memakai kalender WIB. */
+        jadwal: {
+          hariIni: dueToday,
+          besok: dueTomorrow,
+          tujuhHari: dueNext7,
+          terlambat: dueNow,
+        },
+        upcoming,
         topLiked,
         byAuthor: authors.map((a) => ({
           id: a.id,

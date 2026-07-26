@@ -164,9 +164,19 @@ export class ArtikelAdminController {
     return this.service.listTags();
   }
 
+  @Get('stats')
+  @ApiOperation({
+    summary:
+      'Statistik artikel: jumlah per status, total dibaca/disukai, terjadwal berikutnya, terpopuler, sebaran kategori',
+  })
+  stats() {
+    return this.service.adminStats();
+  }
+
   @Post('bulk')
   @ApiOperation({
-    summary: 'Aksi massal: publish | draft | feature | unfeature | delete',
+    summary:
+      'Aksi massal: publish | draft | feature | unfeature | category | delete',
   })
   bulk(@Body() dto: BulkArtikelDto) {
     return this.service.bulkAction(dto);

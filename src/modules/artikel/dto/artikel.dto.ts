@@ -16,6 +16,16 @@ import {
 
 /** Allowed article lifecycle statuses. */
 export const ARTIKEL_STATUSES = ['draft', 'scheduled', 'published'] as const;
+
+/** Allowed `?sort=` values for the article list. */
+export const ARTIKEL_SORTS = [
+  'terbaru', // updatedAt desc (default admin)
+  'dibuat', // createdAt desc
+  'terbit', // publishedAt desc (default publik)
+  'populer', // views desc
+  'disukai', // likeCount desc
+  'judul', // judul asc
+] as const;
 import { PaginationQueryDto } from '../../../common/dto/pagination';
 
 /** Body untuk POST /artikel/sync — merge like & bookmark lokal (daftar slug)
@@ -80,6 +90,24 @@ export class ArtikelListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(ARTIKEL_STATUSES as unknown as string[])
   status?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Urutan hasil. Default: "terbaru" (admin) / "terbit" (publik).',
+    enum: ARTIKEL_SORTS,
+  })
+  @IsOptional()
+  @IsIn(ARTIKEL_SORTS as unknown as string[])
+  sort?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter artikel tanpa kategori (admin)',
+    type: Boolean,
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  uncategorized?: boolean;
 }
 
 export class CreateArtikelDto {
@@ -301,11 +329,29 @@ export class BulkArtikelDto {
   ids!: number[];
 
   @ApiProperty({
-    enum: ['publish', 'draft', 'feature', 'unfeature', 'delete'],
-    description: 'Aksi yang diterapkan ke semua id',
+    enum: ['publish', 'draft', 'feature', 'unfeature', 'category', 'delete'],
+    description:
+      'Aksi yang diterapkan ke semua id. "category" memindahkan artikel ke `categoryId` (kosong = lepas kategori).',
   })
-  @IsIn(['publish', 'draft', 'feature', 'unfeature', 'delete'])
-  action!: 'publish' | 'draft' | 'feature' | 'unfeature' | 'delete';
+  @IsIn(['publish', 'draft', 'feature', 'unfeature', 'category', 'delete'])
+  action!:
+    | 'publish'
+    | 'draft'
+    | 'feature'
+    | 'unfeature'
+    | 'category'
+    | 'delete';
+
+  @ApiPropertyOptional({
+    description:
+      'Kategori tujuan untuk action "category". Kosong/null = lepas kategori.',
+    nullable: true,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  categoryId?: number | null;
 }
 
 export class CreateKategoriDto {

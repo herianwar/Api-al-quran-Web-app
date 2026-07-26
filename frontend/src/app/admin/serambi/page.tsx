@@ -130,6 +130,50 @@ function excerpt(body: string, max = 70): string {
   return one.length > max ? `${one.slice(0, max).trimEnd()}…` : one;
 }
 
+// ─── Kalender WIB ──────────────────────────────────────────────────────
+// Antrean tayang selalu dikelompokkan menurut hari WIB, bukan zona browser
+// admin — supaya "Hari ini" di panel sama persis dengan yang dihitung backend
+// (slot 05:30 WIB tersimpan sebagai 22:30 UTC hari sebelumnya).
+
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** "YYYY-MM-DD" tanggal WIB dari sebuah instant ISO. */
+function wibDayKey(iso: string): string {
+  return new Date(new Date(iso).getTime() + WIB_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** "05:30" jam WIB dari sebuah instant ISO. */
+function wibTime(iso: string): string {
+  return new Date(new Date(iso).getTime() + WIB_OFFSET_MS)
+    .toISOString()
+    .slice(11, 16);
+}
+
+/** "YYYY-MM-DD" hari WIB ke-`offsetDays` dari sekarang. */
+function wibTodayKey(offsetDays = 0): string {
+  const n = new Date(Date.now() + WIB_OFFSET_MS);
+  return new Date(
+    Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + offsetDays),
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** "Hari ini" / "Besok" / "Rabu, 29 Jul" untuk judul grup antrean. */
+function wibDayLabel(key: string): string {
+  if (key === wibTodayKey(0)) return "Hari ini";
+  if (key === wibTodayKey(1)) return "Besok";
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 /** ISO → nilai <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") di zona lokal. */
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
@@ -166,6 +210,7 @@ const STATUS_META: Record<
 };
 
 const SORTS: { value: string; label: string }[] = [
+  { value: "jadwal", label: "Jadwal terdekat" },
   { value: "terbaru", label: "Terbaru dibuat" },
   { value: "diperbarui", label: "Terakhir diperbarui" },
   { value: "disukai", label: "Paling banyak disukai" },
@@ -267,6 +312,29 @@ function AdminSerambiInner() {
   );
 
   const items = useMemo(() => data?.data ?? [], [data]);
+
+  // Antrean tayang dikelompokkan per hari WIB. `upcoming` sudah urut menaik
+  // dari backend, jadi cukup pecah saat tanggalnya berganti.
+  const upcomingByDay = useMemo(() => {
+    const groups: {
+      key: string;
+      items: NonNullable<SerambiAdminStats["upcoming"]>;
+    }[] = [];
+    for (const u of stats?.upcoming ?? []) {
+      if (!u.scheduledAt) continue;
+      const key = wibDayKey(u.scheduledAt);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) last.items.push(u);
+      else groups.push({ key, items: [u] });
+    }
+    return groups;
+  }, [stats]);
+
+  // "Jadwal terdekat" hanya masuk akal untuk post terjadwal; pindah ke tab
+  // status lain mengembalikan urutan ke default.
+  const dropJadwalSort: Record<string, string | null> =
+    sort === "jadwal" ? { sort: null } : {};
+
   const meta = data?.meta;
   const totalPages = (meta?.totalPages as number | undefined) ?? 1;
   const total = (meta?.total as number | undefined) ?? items.length;
@@ -598,27 +666,110 @@ function AdminSerambiInner() {
           label="Terjadwal"
           value={stats?.scheduled ?? "—"}
           hint={
-            stats?.nextScheduled
-              ? `Berikutnya ${timeAgo(stats.nextScheduled.scheduledAt)}`
-              : "Tidak ada antrean tayang"
+            stats
+              ? stats.jadwal.hariIni > 0
+                ? `${num(stats.jadwal.hariIni)} tayang hari ini · ${num(
+                    stats.jadwal.besok,
+                  )} besok`
+                : stats.nextScheduled
+                  ? `Berikutnya ${timeAgo(stats.nextScheduled.scheduledAt)}`
+                  : "Tidak ada antrean tayang"
+              : "—"
           }
           icon={CalendarClock}
           tone="amber"
         />
       </div>
 
-      {/* Post terjadwal berikutnya */}
-      {stats?.nextScheduled && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-800">
-          <CalendarClock size={16} className="shrink-0" />
-          <span className="font-semibold">Terjadwal berikutnya:</span>
-          <span className="min-w-0 truncate">
-            {excerpt(stats.nextScheduled.body, 60)}
-          </span>
-          <span className="text-sky-600">
-            · {fmtDateTime(stats.nextScheduled.scheduledAt)} (
-            {timeAgo(stats.nextScheduled.scheduledAt)})
-          </span>
+      {/* Antrean tayang — apa yang naik hari ini, besok, dan seterusnya */}
+      {stats && stats.scheduled > 0 && (
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 px-4 py-3">
+            <div className="flex items-center gap-2 font-semibold text-slate-800">
+              <CalendarClock size={16} className="text-sky-500" />
+              Akan tayang
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <CountChip
+                label="Hari ini"
+                value={stats.jadwal.hariIni}
+                tone="sky"
+              />
+              <CountChip label="Besok" value={stats.jadwal.besok} tone="slate" />
+              <CountChip
+                label="7 hari"
+                value={stats.jadwal.tujuhHari}
+                tone="slate"
+              />
+              <CountChip
+                label="Total antre"
+                value={stats.scheduled}
+                tone="slate"
+              />
+            </div>
+            <button
+              onClick={() => setParams({ status: "scheduled", sort: "jadwal" })}
+              className="ml-auto text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              Lihat semua jadwal →
+            </button>
+          </div>
+
+          {stats.jadwal.terlambat > 0 && (
+            <div className="flex items-start gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+              <CalendarCheck size={14} className="mt-0.5 shrink-0" />
+              <span>
+                <strong>{num(stats.jadwal.terlambat)} post</strong> sudah lewat
+                jadwalnya tapi belum tayang. Promosi dipicu kunjungan ke feed
+                publik, jadi biasanya beres sendiri dalam beberapa menit.
+              </span>
+            </div>
+          )}
+
+          {upcomingByDay.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-slate-500">
+              Belum ada antrean tayang.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {upcomingByDay.map((g) => (
+                <div key={g.key} className="px-4 py-3">
+                  <div className="mb-2 flex items-baseline gap-2">
+                    <span className="text-sm font-semibold text-slate-700">
+                      {wibDayLabel(g.key)}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {g.items.length} post
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {g.items.map((u) => (
+                      <li
+                        key={u.id}
+                        className="flex items-start gap-2.5 text-sm"
+                      >
+                        <span className="mt-px w-12 shrink-0 font-mono text-xs font-semibold tabular-nums text-sky-600">
+                          {u.scheduledAt ? wibTime(u.scheduledAt) : "—"}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-slate-600">
+                          {excerpt(u.body, 90)}
+                        </span>
+                        <span
+                          className="hidden shrink-0 text-xs text-slate-400 sm:inline"
+                          title={fmtDateTime(u.scheduledAt)}
+                        >
+                          {timeAgo(u.scheduledAt)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+            Semua jam ditampilkan dalam WIB (UTC+7).
+          </p>
         </div>
       )}
 
@@ -626,14 +777,16 @@ function AdminSerambiInner() {
       <div className="flex flex-wrap gap-2">
         <FilterPill
           active={!status && !author}
-          onClick={() => setParams({ status: null, author: null })}
+          onClick={() =>
+            setParams({ status: null, author: null, ...dropJadwalSort })
+          }
           count={stats?.total}
         >
           Semua
         </FilterPill>
         <FilterPill
           active={status === "published"}
-          onClick={() => setParams({ status: "published" })}
+          onClick={() => setParams({ status: "published", ...dropJadwalSort })}
           count={stats?.published}
           tone="emerald"
         >
@@ -641,7 +794,9 @@ function AdminSerambiInner() {
         </FilterPill>
         <FilterPill
           active={status === "scheduled"}
-          onClick={() => setParams({ status: "scheduled" })}
+          // Masuk ke tab terjadwal = ingin lihat antrean, jadi sekalian urut
+          // dari yang paling dekat tayang.
+          onClick={() => setParams({ status: "scheduled", sort: "jadwal" })}
           count={stats?.scheduled}
           tone="sky"
         >
@@ -649,7 +804,7 @@ function AdminSerambiInner() {
         </FilterPill>
         <FilterPill
           active={status === "draft"}
-          onClick={() => setParams({ status: "draft" })}
+          onClick={() => setParams({ status: "draft", ...dropJadwalSort })}
           count={stats?.draft}
           tone="amber"
         >
@@ -657,7 +812,7 @@ function AdminSerambiInner() {
         </FilterPill>
         <FilterPill
           active={status === "archived"}
-          onClick={() => setParams({ status: "archived" })}
+          onClick={() => setParams({ status: "archived", ...dropJadwalSort })}
           count={stats?.archived}
           tone="slate"
         >
@@ -1441,6 +1596,30 @@ function IconBtn({
     >
       {children}
     </button>
+  );
+}
+
+/** Chip angka statis (non-klik) untuk ringkasan antrean tayang. */
+function CountChip({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "sky" | "slate";
+}) {
+  const cls =
+    tone === "sky" && value > 0
+      ? "border-sky-200 bg-sky-50 text-sky-700"
+      : "border-slate-200 bg-slate-50 text-slate-600";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium ${cls}`}
+    >
+      {label}
+      <span className="font-semibold tabular-nums">{num(value)}</span>
+    </span>
   );
 }
 

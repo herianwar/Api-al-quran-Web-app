@@ -594,6 +594,22 @@ export interface SerambiAdminStats {
     body: string;
     scheduledAt: string | null;
   } | null;
+  /** Ringkasan antrean tayang, dihitung dengan kalender WIB. */
+  jadwal: {
+    hariIni: number;
+    besok: number;
+    tujuhHari: number;
+    /** Sudah lewat jadwalnya tapi belum dipromosikan jadi published. */
+    terlambat: number;
+  };
+  /** 12 post terjadwal terdekat, urut dari yang paling cepat tayang. */
+  upcoming: {
+    id: string;
+    body: string;
+    scheduledAt: string | null;
+    imageUrl: string | null;
+    authorName: string;
+  }[];
   topLiked: {
     id: string;
     body: string;
