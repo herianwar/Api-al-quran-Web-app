@@ -263,6 +263,7 @@ model User {
   haidPeriods     HaidPeriod[]
   qadhaPuasa      QadhaPuasa[]
   amalanLogs      AmalanLog[]
+  moodEntries     MoodEntry[]
   khatamGoal      KhatamGoal?
   ibadahDaily     UserIbadahDaily[]
   shopOrders      ShopOrder[]
@@ -405,6 +406,29 @@ model AmalanLog {
   @@unique([userId, tanggal, key])
   @@index([userId, tanggal])
   @@map("amalan_logs")
+}
+
+/// Catatan mood & gejala harian (Zona Muslimah). Satu baris = satu hari.
+/// `tanggal` string `yyyy-MM-dd` (tanggal kalender lokal user / WIB) mengikuti
+/// pola AmalanLog — bukan instant, supaya tidak pernah bergeser karena timezone.
+/// `symptoms` jsonb: array `[{ key, intensitas }]`; divalidasi di service
+/// terhadap katalog di muslimah.mood.ts, bukan oleh DB.
+model MoodEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  tanggal   String
+  mood      String? // joyful | calm | neutral | tired | sad | anxious | angry
+  flow      String? // spotting | ringan | sedang | deras
+  symptoms  Json     @default("[]")
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tanggal])
+  @@index([userId, tanggal])
+  @@map("mood_entries")
 }
 
 /// Rencana khatam Al-Qur'an: target menyelesaikan 30 juz dalam rentang

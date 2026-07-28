@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -11,6 +13,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -175,6 +178,103 @@ export class AmalanQueryDto {
   @IsOptional()
   @Matches(ISO_DATE_OPT, { message: 'tanggal harus format YYYY-MM-DD' })
   tanggal?: string;
+}
+
+// ─── Mood & gejala harian ──────────────────────────────────────────────
+//
+// DTO hanya menjaga BENTUK (tipe, panjang, struktur). Keanggotaan enum
+// (mood/flow/intensitas/key gejala) sengaja divalidasi di service supaya bisa
+// mengembalikan 422 + `code` domain yang bisa dibaca app, bukan 400 generik
+// dari ValidationPipe global.
+
+export class SymptomDto {
+  @ApiProperty({ description: 'Key gejala, mis. "kram"', example: 'kram' })
+  @IsString()
+  @MaxLength(40)
+  key!: string;
+
+  @ApiPropertyOptional({
+    enum: ['ringan', 'sedang', 'berat'],
+    description: 'Opsional; null = tidak diisi.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, value) => value !== null)
+  @IsString()
+  intensitas?: string | null;
+}
+
+export class UpsertMoodDto {
+  @ApiPropertyOptional({
+    enum: ['joyful', 'calm', 'neutral', 'tired', 'sad', 'anxious', 'angry'],
+    description: 'Kirim null untuk mengosongkan.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, value) => value !== null)
+  @IsString()
+  mood?: string | null;
+
+  @ApiPropertyOptional({
+    enum: ['spotting', 'ringan', 'sedang', 'deras'],
+    description: 'Intensitas aliran haid hari itu. Kirim null untuk mengosongkan.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, value) => value !== null)
+  @IsString()
+  flow?: string | null;
+
+  @ApiPropertyOptional({
+    type: [SymptomDto],
+    description: 'Daftar gejala. Kirim [] atau null untuk mengosongkan.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, value) => value !== null)
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => SymptomDto)
+  symptoms?: SymptomDto[] | null;
+
+  @ApiPropertyOptional({ maxLength: 500, description: 'Kirim null untuk mengosongkan.' })
+  @IsOptional()
+  @ValidateIf((_o, value) => value !== null)
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+}
+
+/** Satu entri pada import massal — sama seperti upsert + tanggalnya. */
+export class BulkMoodItemDto extends UpsertMoodDto {
+  @ApiProperty({ description: 'Tanggal (YYYY-MM-DD)', example: '2026-07-20' })
+  @Matches(ISO_DATE, { message: 'tanggal harus format YYYY-MM-DD' })
+  tanggal!: string;
+}
+
+export class BulkMoodDto {
+  @ApiProperty({
+    type: [BulkMoodItemDto],
+    description: 'Maksimal 400 entri per request (≈13 bulan catatan harian).',
+  })
+  @IsArray()
+  @ArrayMaxSize(400)
+  @ValidateNested({ each: true })
+  @Type(() => BulkMoodItemDto)
+  entries!: BulkMoodItemDto[];
+}
+
+export class MoodRangeQueryDto {
+  @ApiPropertyOptional({
+    description: 'Awal rentang (YYYY-MM-DD). Default 60 hari sebelum `to`.',
+  })
+  @IsOptional()
+  @Matches(ISO_DATE, { message: 'from harus format YYYY-MM-DD' })
+  from?: string;
+
+  @ApiPropertyOptional({
+    description: 'Akhir rentang (YYYY-MM-DD). Default hari ini (WIB).',
+  })
+  @IsOptional()
+  @Matches(ISO_DATE, { message: 'to harus format YYYY-MM-DD' })
+  to?: string;
 }
 
 export class ToggleAmalanDto {

@@ -16,14 +16,18 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   AmalanQueryDto,
   BayarQadhaDto,
+  BulkMoodDto,
   CreateHaidPeriodDto,
   CreateQadhaDto,
+  MoodRangeQueryDto,
   PuasaSunnahQueryDto,
   StatusQueryDto,
   ToggleAmalanDto,
   UpdateHaidPeriodDto,
   UpdateQadhaDto,
+  UpsertMoodDto,
 } from './dto/muslimah.dto';
+import { MoodService } from './muslimah.mood.service';
 import { MuslimahService } from './muslimah.service';
 
 @ApiTags('Muslimah')
@@ -31,7 +35,10 @@ import { MuslimahService } from './muslimah.service';
 @UseGuards(JwtAuthGuard)
 @Controller('muslimah')
 export class MuslimahController {
-  constructor(private readonly service: MuslimahService) {}
+  constructor(
+    private readonly service: MuslimahService,
+    private readonly mood: MoodService,
+  ) {}
 
   // ─── Dashboard ───────────────────────────────────────────────────────
 
@@ -89,6 +96,61 @@ export class MuslimahController {
   @ApiOperation({ summary: 'Hapus periode' })
   deletePeriod(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     return this.service.deletePeriod(userId, id);
+  }
+
+  // ─── Mood & gejala harian ──────────────────────────────────────────────
+  //
+  // URUTAN PENTING: '/mood/insight' & '/mood/bulk' harus dideklarasikan
+  // SEBELUM '/mood/:tanggal', kalau tidak route param akan menelannya dan
+  // "insight" dibaca sebagai tanggal.
+
+  @Get('mood')
+  @ApiOperation({ summary: 'Catatan mood & gejala dalam rentang (default 60 hari)' })
+  listMood(
+    @CurrentUser('userId') userId: string,
+    @Query() q: MoodRangeQueryDto,
+  ) {
+    return this.mood.list(userId, q);
+  }
+
+  @Get('mood/insight')
+  @ApiOperation({ summary: 'Pola gejala & mood per fase siklus (statistik, bukan diagnosis)' })
+  moodInsight(@CurrentUser('userId') userId: string) {
+    return this.mood.insight(userId);
+  }
+
+  @Post('mood/bulk')
+  @ApiOperation({ summary: 'Import massal catatan lokal (idempoten, upsert per tanggal)' })
+  bulkMood(@CurrentUser('userId') userId: string, @Body() dto: BulkMoodDto) {
+    return this.mood.bulk(userId, dto);
+  }
+
+  @Get('mood/:tanggal')
+  @ApiOperation({ summary: 'Catatan mood satu tanggal (data null bila belum ada)' })
+  getMood(
+    @CurrentUser('userId') userId: string,
+    @Param('tanggal') tanggal: string,
+  ) {
+    return this.mood.get(userId, tanggal);
+  }
+
+  @Put('mood/:tanggal')
+  @ApiOperation({ summary: 'Simpan/replace catatan mood satu tanggal (upsert)' })
+  upsertMood(
+    @CurrentUser('userId') userId: string,
+    @Param('tanggal') tanggal: string,
+    @Body() dto: UpsertMoodDto,
+  ) {
+    return this.mood.upsert(userId, tanggal, dto);
+  }
+
+  @Delete('mood/:tanggal')
+  @ApiOperation({ summary: 'Hapus catatan mood satu tanggal' })
+  deleteMood(
+    @CurrentUser('userId') userId: string,
+    @Param('tanggal') tanggal: string,
+  ) {
+    return this.mood.remove(userId, tanggal);
   }
 
   // ─── Puasa sunnah ──────────────────────────────────────────────────────
