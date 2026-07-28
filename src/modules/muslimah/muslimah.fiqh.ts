@@ -10,7 +10,10 @@
  * dirujuk ke ustadz/ustadzah. The UI surfaces this disclaimer.
  */
 
-import { gregorianStringToHijri } from '../hijri/hijri.converter';
+import {
+  gregorianStringToHijri,
+  hijriStringToGregorian,
+} from '../hijri/hijri.converter';
 
 export type HaidJenis = 'haid' | 'nifas' | 'istihadhah';
 export type IbadahStatus = HaidJenis | 'suci';
@@ -468,4 +471,105 @@ export function ramadhanDaysInRange(
     if (h.hijri.month === 9) count++;
   }
   return count;
+}
+
+/**
+ * Idem, tapi dipecah per tahun Hijriah: `{ 1447: 5 }` = 5 hari periode ini
+ * jatuh di Ramadhan 1447 H. Sebuah periode panjang bisa (secara teoretis)
+ * menyentuh dua Ramadhan berbeda, jadi hasilnya map, bukan satu angka.
+ * Periode yang masih berlangsung (`selesai=null`) mengembalikan map kosong —
+ * hutangnya baru pasti setelah periode ditutup.
+ */
+export function ramadhanDaysByYear(
+  mulaiIso: string,
+  selesaiIso: string | null,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  if (!selesaiIso) return out;
+  const total = inclusiveDays(mulaiIso, selesaiIso);
+  if (total <= 0 || total > 60) return out; // guard input absurd
+  for (let i = 0; i < total; i++) {
+    const h = gregorianStringToHijri(addDaysIso(mulaiIso, i));
+    if (h.hijri.month !== 9) continue;
+    out.set(h.hijri.year, (out.get(h.hijri.year) ?? 0) + 1);
+  }
+  return out;
+}
+
+// ─── Ramadhan: tanggal, deadline qadha, fidyah ─────────────────────────
+
+/** Tanggal Masehi (ISO) 1 Ramadhan pada tahun Hijriah `tahun`. */
+export function ramadanMulaiIso(tahunHijriah: number): string {
+  return hijriStringToGregorian(`${tahunHijriah}-09-01`).gregorian.iso;
+}
+
+export interface RamadanBerikutnya {
+  tanggal: string; // ISO Masehi 1 Ramadhan berikutnya
+  hariLagi: number; // selisih hari dari `acuan` (0 = hari ini)
+  tahunHijriah: number;
+}
+
+/**
+ * Ramadhan berikutnya relatif ke `acuanIso`: 1 Ramadhan pertama yang jatuh
+ * pada atau sesudah tanggal acuan. Kalau acuan sedang di tengah Ramadhan,
+ * yang dikembalikan adalah Ramadhan tahun berikutnya — itu memang deadline
+ * qadha yang relevan (Ramadhan berjalan sudah tidak bisa dipakai mengqadha).
+ *
+ * Kalender yang dipakai = tabular Islamic (sama dengan seluruh app), jadi bisa
+ * meleset ±1 hari dari rukyat lokal. Cukup untuk hitung mundur, bukan untuk
+ * penetapan awal puasa.
+ */
+export function ramadanBerikutnya(
+  acuanIso: string = jakartaTodayIso(),
+): RamadanBerikutnya {
+  const h = gregorianStringToHijri(acuanIso);
+  // Mulai dari tahun Hijriah acuan, maju sampai 1 Ramadhan >= acuan.
+  let tahun = h.hijri.year;
+  let tanggal = ramadanMulaiIso(tahun);
+  while (tanggal < acuanIso) {
+    tahun += 1;
+    tanggal = ramadanMulaiIso(tahun);
+  }
+  return {
+    tanggal,
+    hariLagi: inclusiveDays(acuanIso, tanggal) - 1,
+    tahunHijriah: tahun,
+  };
+}
+
+/**
+ * Batas akhir mengqadha hutang Ramadhan `tahunHijriah` = sebelum masuk
+ * Ramadhan berikutnya, yakni 1 Ramadhan tahun sesudahnya.
+ */
+export function deadlineQadha(tahunHijriah: number): string {
+  return ramadanMulaiIso(tahunHijriah + 1);
+}
+
+export interface StatusKeterlambatan {
+  deadline: string | null;
+  terlambat: boolean;
+  fidyahHari: number;
+}
+
+/**
+ * Status keterlambatan sebuah entri qadha.
+ *
+ * Jumhur: menunda qadha sampai masuk Ramadhan berikutnya TANPA uzur → tetap
+ * wajib qadha DITAMBAH fidyah 1 mud makanan pokok per hari yang tertunda.
+ * `fidyahHari` di sini = sisa hari yang belum dibayar saat deadline terlewat
+ * (heuristik indikatif — sebagian ulama mengalikan dengan jumlah tahun
+ * penundaan, dan uzur yang berlanjut menggugurkan fidyah). Angka ini untuk
+ * edukasi/pengingat, bukan penetapan; selalu tampilkan disclaimer.
+ */
+export function statusKeterlambatan(
+  tahunHijriah: number | null,
+  sisaHari: number,
+  acuanIso: string = jakartaTodayIso(),
+): StatusKeterlambatan {
+  if (tahunHijriah === null) {
+    return { deadline: null, terlambat: false, fidyahHari: 0 };
+  }
+  const deadline = deadlineQadha(tahunHijriah);
+  const terlambat = sisaHari > 0 && acuanIso >= deadline;
+  return { deadline, terlambat, fidyahHari: terlambat ? sisaHari : 0 };
 }

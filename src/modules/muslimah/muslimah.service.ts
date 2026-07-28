@@ -25,9 +25,12 @@ import {
   jakartaTodayIso,
   predictNextHaid,
   puasaSunnahRange,
+  ramadanBerikutnya,
+  ramadhanDaysByYear,
   ramadhanDaysInRange,
   rangesOverlap,
   rulingFor,
+  statusKeterlambatan,
   toIsoDateOnly,
 } from './muslimah.fiqh';
 import { AMALAN_CATALOG, AMALAN_KEYS } from './muslimah.catalog';
@@ -102,6 +105,51 @@ function mapPeriod(p: HaidRow) {
 export const HAID_ACTIVE_EXISTS = 'HAID_ACTIVE_EXISTS';
 export const HAID_OVERLAP = 'HAID_OVERLAP';
 export const HAID_INVALID_RANGE = 'HAID_INVALID_RANGE';
+/** Entri qadha otomatis tidak boleh dihapus/diubah jumlahnya oleh user. */
+export const QADHA_AUTO_PROTECTED = 'QADHA_AUTO_PROTECTED';
+
+/** Baris QadhaPuasa apa adanya dari Prisma. */
+interface QadhaRow {
+  id: string;
+  userId: string;
+  sumber: string;
+  tahun: number | null;
+  jumlah: number;
+  lunas: number;
+  catatan: string | null;
+  otomatis: boolean;
+  ramadanTahun: number | null;
+  haidPeriodeId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Bentuk wire sebuah entri qadha. Field lama (id, sumber, jumlah, lunas,
+ * tahun, catatan, sisa, selesai) dipertahankan persis; sisanya tambahan.
+ */
+function mapQadha(r: QadhaRow, acuanIso: string) {
+  const sisa = Math.max(0, r.jumlah - r.lunas);
+  // Entri manual lama hanya punya `tahun`; pakai itu sebagai fallback supaya
+  // deadline/fidyah tetap bisa dihitung tanpa mengubah data yang sudah ada.
+  const tahunSumber = r.ramadanTahun ?? r.tahun;
+  const { deadline, terlambat, fidyahHari } = statusKeterlambatan(
+    tahunSumber,
+    sisa,
+    acuanIso,
+  );
+  return {
+    ...r,
+    sisa,
+    selesai: r.lunas >= r.jumlah,
+    otomatis: r.otomatis,
+    ramadanTahun: r.ramadanTahun,
+    haidPeriodeId: r.haidPeriodeId,
+    deadline,
+    terlambat,
+    fidyahHari,
+  };
+}
 
 @Injectable()
 export class MuslimahService {
@@ -206,6 +254,95 @@ export class MuslimahService {
     return rows.map(toRange);
   }
 
+  // ─── Qadha otomatis dari haid ∩ Ramadhan ─────────────────────────────
+
+  /**
+   * Recompute entri qadha OTOMATIS milik satu periode haid. Dipanggil setiap
+   * periode dibuat/diubah/dihapus, di dalam transaksi yang sama.
+   *
+   * Idempoten: kunci (userId, ramadanTahun, haidPeriodeId) membuat pemanggilan
+   * berulang meng-update baris yang sama, bukan menambah baris baru.
+   *
+   * Aturan saat hutang mengecil/hilang (periode diperpendek atau dihapus):
+   *  - `lunas` (pembayaran yang sudah tercatat) TIDAK PERNAH dibuang diam-diam.
+   *  - Bila jumlah baru < lunas → lunas di-clamp ke jumlah baru dan alasannya
+   *    ditulis di `catatan`.
+   *  - Bila hutangnya hilang sama sekali tapi user sudah pernah membayar,
+   *    barisnya DIPERTAHANKAN sebagai riwayat lunas (jumlah = lunas) — bukan
+   *    dihapus. Baris tanpa pembayaran barulah dihapus supaya tidak jadi hantu.
+   *
+   * `periode = null` berarti periodenya dihapus → semua hutang otomatis dari
+   * periode itu diperlakukan sebagai 0 hari.
+   */
+  private async syncQadhaOtomatis(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    periodeId: string,
+    periode: { jenis: string; mulai: string; selesai: string | null } | null,
+  ): Promise<void> {
+    // Istihadhah dihukumi suci → puasanya sah, tidak ada hutang qadha.
+    // Periode yang masih berlangsung juga belum menghasilkan hutang pasti.
+    const byYear =
+      periode && periode.jenis !== 'istihadhah'
+        ? ramadhanDaysByYear(periode.mulai, periode.selesai)
+        : new Map<number, number>();
+
+    const existing = await tx.qadhaPuasa.findMany({
+      where: { userId, haidPeriodeId: periodeId, otomatis: true },
+    });
+
+    // 1. Tahun yang masih punya hari Ramadhan → buat / sesuaikan.
+    for (const [tahun, hari] of byYear) {
+      const row = existing.find((e) => e.ramadanTahun === tahun);
+      if (!row) {
+        await tx.qadhaPuasa.create({
+          data: {
+            userId,
+            sumber: periode?.jenis ?? 'haid',
+            tahun,
+            ramadanTahun: tahun,
+            haidPeriodeId: periodeId,
+            otomatis: true,
+            jumlah: hari,
+            lunas: 0,
+            catatan: `Otomatis dari periode ${periode?.jenis ?? 'haid'} ${periode?.mulai} s/d ${periode?.selesai}.`,
+          },
+        });
+        continue;
+      }
+      if (row.jumlah === hari) continue; // sudah sinkron — jangan sentuh
+      const lunasBaru = Math.min(row.lunas, hari);
+      await tx.qadhaPuasa.update({
+        where: { id: row.id },
+        data: {
+          jumlah: hari,
+          lunas: lunasBaru,
+          catatan:
+            lunasBaru < row.lunas
+              ? `Disesuaikan otomatis: hutang ${row.jumlah} → ${hari} hari karena periode haid berubah. Pembayaran tercatat ${row.lunas} hari ikut disesuaikan ke ${lunasBaru}.`
+              : `Disesuaikan otomatis: hutang ${row.jumlah} → ${hari} hari karena periode haid berubah.`,
+        },
+      });
+    }
+
+    // 2. Tahun yang tidak lagi punya hari Ramadhan → lunas dipertahankan,
+    //    sisanya dihapus.
+    for (const row of existing) {
+      if (row.ramadanTahun !== null && byYear.has(row.ramadanTahun)) continue;
+      if (row.lunas > 0) {
+        await tx.qadhaPuasa.update({
+          where: { id: row.id },
+          data: {
+            jumlah: row.lunas,
+            catatan: `Periode haid sumber dihapus/diubah sehingga hutangnya gugur. Pembayaran ${row.lunas} hari yang sudah tercatat tetap disimpan sebagai riwayat.`,
+          },
+        });
+      } else {
+        await tx.qadhaPuasa.delete({ where: { id: row.id } });
+      }
+    }
+  }
+
   // ─── Riwayat siklus (haid / nifas / istihadhah) ──────────────────────
 
   async listPeriods(
@@ -237,7 +374,7 @@ export class MuslimahService {
     const row = await this.guardedWrite(userId, async (tx) => {
       const existing = await this.loadPeriodsTx(tx, userId);
       this.assertPeriodConsistent(existing, { mulai, selesai });
-      return tx.haidPeriod.create({
+      const created = await tx.haidPeriod.create({
         data: {
           userId,
           jenis,
@@ -246,6 +383,12 @@ export class MuslimahService {
           catatan: dto.catatan,
         },
       });
+      await this.syncQadhaOtomatis(tx, userId, created.id, {
+        jenis,
+        mulai,
+        selesai,
+      });
+      return created;
     });
 
     // Hitung berapa hari periode ini jatuh di Ramadhan → saran qadha puasa.
@@ -255,7 +398,7 @@ export class MuslimahService {
     return ok(
       { ...mapPeriod(row), qadhaRamadhan },
       qadhaRamadhan > 0
-        ? `Tercatat. ${qadhaRamadhan} hari jatuh di Ramadhan — disarankan menambah qadha puasa.`
+        ? `Tercatat. ${qadhaRamadhan} hari jatuh di Ramadhan dan sudah dicatat otomatis sebagai qadha puasa — tidak perlu menambah manual.`
         : 'Periode tercatat',
     );
   }
@@ -295,15 +438,22 @@ export class MuslimahService {
         id,
       );
 
-      return tx.haidPeriod.update({
+      const nextJenis = dto.jenis ?? existing.jenis;
+      const updated = await tx.haidPeriod.update({
         where: { id },
         data: {
-          jenis: dto.jenis ?? existing.jenis,
+          jenis: nextJenis,
           mulai: isoToUtcDate(nextMulai),
           selesai: nextSelesai ? isoToUtcDate(nextSelesai) : null,
           catatan: dto.catatan ?? existing.catatan,
         },
       });
+      await this.syncQadhaOtomatis(tx, userId, id, {
+        jenis: nextJenis,
+        mulai: nextMulai,
+        selesai: nextSelesai,
+      });
+      return updated;
     });
     return ok(mapPeriod(row), 'Periode diperbarui');
   }
@@ -312,15 +462,20 @@ export class MuslimahService {
     userId: string,
     id: string,
   ): Promise<ResponsePayload<unknown>> {
-    const result = await this.prisma.haidPeriod.deleteMany({
-      where: { id, userId },
+    await this.guardedWrite(userId, async (tx) => {
+      const existing = await tx.haidPeriod.findFirst({ where: { id, userId } });
+      if (!existing) {
+        throw new NotFoundException({
+          message: 'Periode tidak ditemukan',
+          error: 'NOT_FOUND',
+        });
+      }
+      // Rapikan qadha otomatisnya SEBELUM barisnya hilang, supaya pembayaran
+      // yang sudah tercatat sempat diselamatkan (FK-nya SET NULL, bukan
+      // cascade, jadi baris qadha tidak ikut terhapus diam-diam).
+      await this.syncQadhaOtomatis(tx, userId, id, null);
+      await tx.haidPeriod.delete({ where: { id } });
     });
-    if (result.count === 0) {
-      throw new NotFoundException({
-        message: 'Periode tidak ditemukan',
-        error: 'NOT_FOUND',
-      });
-    }
     return ok({ deleted: true }, 'Periode dihapus');
   }
 
@@ -401,17 +556,21 @@ export class MuslimahService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
+    const hariIni = jakartaTodayIso();
     const totalHutang = rows.reduce((s, r) => s + r.jumlah, 0);
     const totalLunas = rows.reduce((s, r) => s + Math.min(r.lunas, r.jumlah), 0);
-    const items = rows.map((r) => ({
-      ...r,
-      sisa: Math.max(0, r.jumlah - r.lunas),
-      selesai: r.lunas >= r.jumlah,
-    }));
+    const items = rows.map((r) => mapQadha(r, hariIni));
+    const totalFidyahHari = items.reduce((s, r) => s + r.fidyahHari, 0);
+
     return ok(items, 'Daftar qadha puasa', {
       totalHutang,
       totalLunas,
       sisa: Math.max(0, totalHutang - totalLunas),
+      ramadanBerikutnya: ramadanBerikutnya(hariIni),
+      totalFidyahHari,
+      entriTerlambat: items.filter((r) => r.terlambat).length,
+      disclaimer:
+        'Perhitungan fidyah bersifat indikatif (jumhur: 1 mud makanan pokok per hari yang tertunda tanpa uzur). Untuk penetapan final, rujuk ke ustadz/ustadzah.',
     });
   }
 
@@ -430,7 +589,7 @@ export class MuslimahService {
         catatan: dto.catatan,
       },
     });
-    return ok(row, 'Hutang qadha ditambahkan');
+    return ok(mapQadha(row, jakartaTodayIso()), 'Hutang qadha ditambahkan');
   }
 
   async updateQadha(
@@ -447,6 +606,20 @@ export class MuslimahService {
         error: 'NOT_FOUND',
       });
     }
+    // Entri otomatis: jumlah & sumber-nya dimiliki server (akan ditimpa lagi
+    // oleh recompute berikutnya). Pembayaran & catatan tetap boleh diubah user.
+    if (
+      existing.otomatis &&
+      ((dto.jumlah !== undefined && dto.jumlah !== existing.jumlah) ||
+        (dto.sumber !== undefined && dto.sumber !== existing.sumber))
+    ) {
+      throw new ConflictException({
+        message:
+          'Entri qadha ini dihitung otomatis dari periode haid yang beririsan Ramadhan, jadi jumlah harinya tidak bisa diubah manual. Perbaiki tanggal periode haid-nya, atau catat pembayaran lewat tombol "bayar".',
+        error: QADHA_AUTO_PROTECTED,
+        code: QADHA_AUTO_PROTECTED,
+      });
+    }
     const jumlah = dto.jumlah ?? existing.jumlah;
     const lunasRaw = dto.lunas ?? existing.lunas;
     const row = await this.prisma.qadhaPuasa.update({
@@ -458,7 +631,7 @@ export class MuslimahService {
         catatan: dto.catatan ?? existing.catatan,
       },
     });
-    return ok(row, 'Qadha diperbarui');
+    return ok(mapQadha(row, jakartaTodayIso()), 'Qadha diperbarui');
   }
 
   async bayarQadha(
@@ -481,7 +654,7 @@ export class MuslimahService {
       data: { lunas },
     });
     return ok(
-      { ...row, sisa: Math.max(0, row.jumlah - row.lunas), selesai: row.lunas >= row.jumlah },
+      mapQadha(row, jakartaTodayIso()),
       lunas >= existing.jumlah ? 'Alhamdulillah, qadha lunas!' : 'Pembayaran qadha dicatat',
     );
   }
@@ -490,15 +663,27 @@ export class MuslimahService {
     userId: string,
     id: string,
   ): Promise<ResponsePayload<unknown>> {
-    const result = await this.prisma.qadhaPuasa.deleteMany({
+    const existing = await this.prisma.qadhaPuasa.findFirst({
       where: { id, userId },
     });
-    if (result.count === 0) {
+    if (!existing) {
       throw new NotFoundException({
         message: 'Data qadha tidak ditemukan',
         error: 'NOT_FOUND',
       });
     }
+    // Entri otomatis = utang riil dari haid yang beririsan Ramadhan. Menghapus
+    // di sini hanya akan dibuat ulang oleh recompute berikutnya, jadi tolak
+    // dan arahkan user melunasi (atau memperbaiki tanggal periode haid-nya).
+    if (existing.otomatis) {
+      throw new ConflictException({
+        message:
+          'Qadha ini dihitung otomatis dari periode haid yang beririsan Ramadhan dan merupakan utang puasa yang riil, jadi tidak bisa dihapus. Catat pembayarannya sampai lunas, atau perbaiki tanggal periode haid-nya bila tanggalnya keliru.',
+        error: QADHA_AUTO_PROTECTED,
+        code: QADHA_AUTO_PROTECTED,
+      });
+    }
+    await this.prisma.qadhaPuasa.delete({ where: { id } });
     return ok({ deleted: true }, 'Qadha dihapus');
   }
 

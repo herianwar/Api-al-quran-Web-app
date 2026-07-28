@@ -119,53 +119,75 @@ function jdnToGregorian(jdn: number): {
   return { year, month, day };
 }
 
+// Anchor: 1 Muharram 1 AH = JDN 1948440 (Friday, 16 July 622 CE).
+const HIJRI_EPOCH = 1948440 - 1;
+// Average Islamic year length: 354 + 11/30 days = 10631/30 per 30-year cycle.
+const HIJRI_CYCLE = 10631;
+
+/**
+ * JDN hari pertama (1 Muharram) tahun Hijriah `y`.
+ *
+ * Ini definisi tunggal awal tahun yang dipakai KEDUA arah konversi. Sebelumnya
+ * jdnToHijri dan hijriToJDN masing-masing menghitung sendiri dan hasilnya tidak
+ * saling invers: 1 Muharram tiap tahun terbaca balik sebagai 30 Dzulhijjah
+ * tahun sebelumnya.
+ */
+function hijriYearStartJdn(y: number): number {
+  const fullCycles = Math.floor((y - 1) / 30);
+  const yearInCycle = ((y - 1) % 30) + 1;
+  return (
+    HIJRI_EPOCH +
+    fullCycles * HIJRI_CYCLE +
+    Math.floor(((yearInCycle - 1) * HIJRI_CYCLE + 1) / 30)
+  );
+}
+
+/**
+ * Panjang bulan Hijriah (tabular): bulan ganjil 30 hari, genap 29, dan bulan
+ * ke-12 dapat hari ke-30 pada tahun kabisat. Kabisat tidak dihardcode dengan
+ * rumus terpisah — panjang tahunnya diturunkan dari selisih awal tahun,
+ * sehingga selalu konsisten dengan `hijriYearStartJdn`.
+ */
+function hijriMonthLength(year: number, month: number): number {
+  if (month === 12) {
+    const yearLen = hijriYearStartJdn(year + 1) - hijriYearStartJdn(year);
+    return 29 + (yearLen - 354); // 29 hari, 30 di tahun kabisat (355 hari)
+  }
+  return month % 2 === 1 ? 30 : 29;
+}
+
 /** Convert a Julian Day Number to Hijri (tabular Islamic calendar). */
 function jdnToHijri(jdn: number): {
   year: number;
   month: number;
   day: number;
 } {
-  // Anchor: 1 Muharram 1 AH = JDN 1948440 (Friday, 16 July 622 CE).
-  const epoch = 1948440 - 1;
-  const days = jdn - epoch;
-  // Average Islamic year length: 354 + 11/30 days = 10631/30.
-  const cycle = 10631;
-  const yearCycle = Math.floor((30 * days - 1) / cycle);
-  const yearInCycle = yearCycle + 1;
-  const dayOfYearStart =
-    epoch + Math.floor((yearCycle * cycle + 1) / 30);
-  let dayOfYear = jdn - dayOfYearStart;
-  // Month-length table (1-indexed): odd months 30 days, even months 29, with
-  // an extra day in month 12 on leap years.
+  // Estimasi tahun dari panjang rata-rata, lalu dikoreksi ke awal tahun yang
+  // sebenarnya — pembulatan rata-rata meleset di sekitar pergantian tahun.
+  let year = Math.floor((30 * (jdn - HIJRI_EPOCH) - 1) / HIJRI_CYCLE) + 1;
+  while (hijriYearStartJdn(year) > jdn) year -= 1;
+  while (hijriYearStartJdn(year + 1) <= jdn) year += 1;
+
+  let dayOfYear = jdn - hijriYearStartJdn(year);
   let month = 1;
-  while (month <= 12) {
-    const len = month % 2 === 1 ? 30 : 29;
+  while (month < 12) {
+    const len = hijriMonthLength(year, month);
     if (dayOfYear < len) break;
     dayOfYear -= len;
     month += 1;
   }
-  if (month > 12) {
-    month = 12;
-    dayOfYear = 29;
-  }
-  return { year: yearInCycle, month, day: dayOfYear + 1 };
+  return { year, month, day: dayOfYear + 1 };
 }
 
 /** Convert Hijri (tabular) to Julian Day Number. */
 function hijriToJDN(y: number, m: number, d: number): number {
-  // Days from epoch through start of year y:
-  const epoch = 1948440 - 1;
-  const cycle = 10631;
-  const fullCycles = Math.floor((y - 1) / 30);
-  const yearInCycle = ((y - 1) % 30) + 1;
-  const daysToYearStart =
-    fullCycles * cycle + Math.floor(((yearInCycle - 1) * cycle + 1) / 30);
-  // Days from start of year through start of month m:
   let daysToMonth = 0;
   for (let i = 1; i < m; i++) {
-    daysToMonth += i % 2 === 1 ? 30 : 29;
+    daysToMonth += hijriMonthLength(y, i);
   }
-  return epoch + daysToYearStart + daysToMonth + d;
+  // `d - 1` karena `d` 1-indexed: hari ke-1 sebuah bulan JATUH PADA awal bulan
+  // itu, bukan sehari sesudahnya.
+  return hijriYearStartJdn(y) + daysToMonth + d - 1;
 }
 
 function gregWeekdayIdx(jdn: number): number {

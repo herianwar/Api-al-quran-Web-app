@@ -349,7 +349,8 @@ model HaidPeriod {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  qadhaPuasa QadhaPuasa[]
 
   @@index([userId, mulai])
   @@map("haid_periods")
@@ -358,20 +359,34 @@ model HaidPeriod {
 /// A fasting-debt ledger entry (utang puasa Ramadhan yang harus diqadha).
 /// `jumlah` = total hari hutang dalam entri ini, `lunas` = hari yang sudah
 /// dibayar. `sumber` mencatat penyebab (haid/nifas/safar/sakit/lainnya).
+/// `otomatis` = baris ini di-generate server dari periode haid/nifas yang
+/// beririsan Ramadhan (bukan input manual user). Baris otomatis dikunci unik
+/// pada (userId, ramadanTahun, haidPeriodeId) supaya recompute idempoten —
+/// tidak pernah menghasilkan duplikat. Untuk baris manual ketiganya NULL, dan
+/// Postgres memperlakukan NULL sebagai berbeda sehingga tidak ikut terkunci.
 model QadhaPuasa {
-  id        String   @id @default(uuid())
-  userId    String
-  sumber    String   @default("haid") // haid | nifas | safar | sakit | lainnya
-  tahun     Int? // tahun Hijriah Ramadhan asal hutang
-  jumlah    Int // total hari hutang
-  lunas     Int      @default(0) // hari yang sudah dibayar
-  catatan   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(uuid())
+  userId        String
+  sumber        String   @default("haid") // haid | nifas | safar | sakit | lainnya
+  tahun         Int? // tahun Hijriah Ramadhan asal hutang (dipertahankan utk klien lama)
+  jumlah        Int // total hari hutang
+  lunas         Int      @default(0) // hari yang sudah dibayar
+  catatan       String?
+  otomatis      Boolean  @default(false)
+  ramadanTahun  Int? // tahun Hijriah Ramadhan sumber (entri otomatis)
+  haidPeriodeId String? // periode haid asal (keterlacakan)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SetNull, bukan Cascade: menghapus periode haid tidak boleh ikut menghapus
+  // riwayat pembayaran. Penyesuaian jumlah/penghapusan baris dilakukan eksplisit
+  // oleh MuslimahService.syncQadhaOtomatis().
+  haidPeriode HaidPeriod? @relation(fields: [haidPeriodeId], references: [id], onDelete: SetNull)
 
+  @@unique([userId, ramadanTahun, haidPeriodeId])
   @@index([userId])
+  @@index([haidPeriodeId])
   @@map("qadha_puasa")
 }
 
