@@ -33,6 +33,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Terjadi kesalahan pada server';
     let errorCode: string | undefined;
+    let domainCode: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -46,6 +47,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? (msg as string[]).join(', ')
           : ((msg as string) ?? exception.message);
         if (typeof body.error === 'string') errorCode = body.error;
+        // Kode domain opsional (mis. HAID_OVERLAP) diteruskan apa adanya agar
+        // client bisa bercabang tanpa mem-parsing pesan.
+        if (typeof body.code === 'string') domainCode = body.code;
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       // DB constraint violations (unique, FK, not-found, …). Without this
@@ -78,6 +82,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       error: errorCode ?? STATUS_ERROR_CODE[status] ?? 'ERROR',
       statusCode: status,
+      ...(domainCode ? { code: domainCode } : {}),
     };
 
     response.status(status).json(payload);

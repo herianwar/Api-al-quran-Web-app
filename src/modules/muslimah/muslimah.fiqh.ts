@@ -141,6 +141,83 @@ export function inclusiveDays(aIso: string, bIso: string): number {
   return Math.floor((b - a) / 86_400_000) + 1;
 }
 
+// ─── Rentang periode: irisan & pencarian periode yang mencakup tanggal ──
+
+/**
+ * Sentinel "tak hingga" untuk periode yang masih berlangsung (`selesai=null`).
+ * Dipakai HANYA sebagai batas atas saat membandingkan string tanggal — nilai
+ * ini tidak pernah disimpan ke DB dan tidak pernah dikirim ke client.
+ */
+export const OPEN_END_ISO = '9999-12-31';
+
+/**
+ * Normalisasi apa pun (Date dari Prisma, string ISO penuh, atau `YYYY-MM-DD`)
+ * menjadi tanggal kalender murni `YYYY-MM-DD`.
+ *
+ * Kolom `mulai`/`selesai` adalah `@db.Date` — tanggal kalender lokal user, BUKAN
+ * instant. Prisma mengembalikannya sebagai `Date` di tengah malam UTC, jadi
+ * memotong komponen UTC selalu aman dan tidak pernah bergeser sehari (berbeda
+ * dengan `toLocaleDateString`/getFullYear yang ikut TZ server).
+ */
+export function toIsoDateOnly(value: string | Date): string {
+  return (
+    typeof value === 'string' ? value : value.toISOString()
+  ).slice(0, 10);
+}
+
+/** Rentang tanggal (inklusif). `selesai=null` berarti terbuka sampai +∞. */
+export interface PeriodeRange {
+  jenis: string;
+  mulai: string; // ISO YYYY-MM-DD
+  selesai: string | null; // ISO YYYY-MM-DD, null = masih berlangsung
+}
+
+/** Batas akhir efektif sebuah rentang (periode berlangsung = +∞). */
+function endOf(selesai: string | null): string {
+  return selesai ?? OPEN_END_ISO;
+}
+
+/**
+ * Dua rentang inklusif beririsan bila `aStart <= bEnd && bStart <= aEnd`.
+ * Perbandingan dilakukan sebagai string `YYYY-MM-DD` (date-only, lexicographic
+ * = kronologis) sehingga bebas dari jam/timezone.
+ */
+export function rangesOverlap(
+  aMulai: string,
+  aSelesai: string | null,
+  bMulai: string,
+  bSelesai: string | null,
+): boolean {
+  return aMulai <= endOf(bSelesai) && bMulai <= endOf(aSelesai);
+}
+
+/** Apakah periode mencakup tanggal `iso` (inklusif, open-ended = +∞)? */
+export function coversDate(p: PeriodeRange, iso: string): boolean {
+  return p.mulai <= iso && iso <= endOf(p.selesai);
+}
+
+/**
+ * Satu-satunya sumber kebenaran status pada sebuah tanggal: periode milik user
+ * yang mencakup `iso`. Bila (karena data lama yang korup) ada lebih dari satu,
+ * pilih yang paling akhir mulainya; seri → yang masih berlangsung; seri lagi →
+ * urut id agar hasilnya deterministik, bukan bergantung urutan baris DB.
+ */
+export function findCoveringPeriod<T extends PeriodeRange & { id?: string }>(
+  periods: T[],
+  iso: string,
+): T | null {
+  const covering = periods.filter((p) => coversDate(p, iso));
+  if (covering.length === 0) return null;
+  covering.sort((a, b) => {
+    if (a.mulai !== b.mulai) return a.mulai < b.mulai ? 1 : -1; // mulai desc
+    const aOpen = a.selesai === null ? 0 : 1;
+    const bOpen = b.selesai === null ? 0 : 1;
+    if (aOpen !== bOpen) return aOpen - bOpen; // berlangsung duluan
+    return (a.id ?? '') < (b.id ?? '') ? -1 : 1;
+  });
+  return covering[0];
+}
+
 // ─── Puasa sunnah & hari terlarang ─────────────────────────────────────
 
 export interface PuasaSunnahDay {

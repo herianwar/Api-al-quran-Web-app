@@ -10,6 +10,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,9 +29,10 @@ export class CreateHaidPeriodDto {
     description: 'Tanggal selesai (YYYY-MM-DD). Kosongkan bila masih berlangsung.',
     example: '2026-05-26',
   })
-  @IsOptional()
+  @IsOptional() // null/"" = periode masih berlangsung
+  @ValidateIf((_o, value) => value !== '')
   @Matches(ISO_DATE, { message: 'selesai harus format YYYY-MM-DD' })
-  selesai?: string;
+  selesai?: string | null;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
@@ -54,9 +56,10 @@ export class UpdateHaidPeriodDto {
     description: 'Set null/"" untuk menandai masih berlangsung.',
     example: '2026-05-26',
   })
-  @IsOptional()
+  @IsOptional() // null = tandai masih berlangsung
+  @ValidateIf((_o, value) => value !== '') // "" idem (form kosong dari app)
   @Matches(ISO_DATE, { message: 'selesai harus format YYYY-MM-DD' })
-  selesai?: string;
+  selesai?: string | null;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()

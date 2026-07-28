@@ -1,8 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ResponsePayload, ok } from '../../common/dto/api-response';
 import {
   PaginationQueryDto,
@@ -14,6 +17,8 @@ import { gregorianStringToHijri } from '../hijri/hijri.converter';
 import {
   IbadahStatus,
   addDaysIso,
+  coversDate,
+  findCoveringPeriod,
   hariTerlarangRange,
   inclusiveDays,
   isoToUtcDate,
@@ -21,7 +26,9 @@ import {
   predictNextHaid,
   puasaSunnahRange,
   ramadhanDaysInRange,
+  rangesOverlap,
   rulingFor,
+  toIsoDateOnly,
 } from './muslimah.fiqh';
 import { AMALAN_CATALOG, AMALAN_KEYS } from './muslimah.catalog';
 import {
@@ -33,8 +40,8 @@ import {
   UpdateQadhaDto,
 } from './dto/muslimah.dto';
 
-/** Shape a HaidPeriod row for the wire: dates as ISO `YYYY-MM-DD` strings. */
-function mapPeriod(p: {
+/** Baris HaidPeriod apa adanya dari Prisma. */
+interface HaidRow {
   id: string;
   jenis: string;
   mulai: Date;
@@ -42,25 +49,162 @@ function mapPeriod(p: {
   catatan: string | null;
   createdAt: Date;
   updatedAt: Date;
-}) {
-  const mulaiIso = p.mulai.toISOString().slice(0, 10);
-  const selesaiIso = p.selesai ? p.selesai.toISOString().slice(0, 10) : null;
+}
+
+/**
+ * Baris DB → rentang date-only. Semua logika (irisan, status, prediksi) bekerja
+ * di atas bentuk ini supaya perbandingan tanggal tidak pernah menyentuh jam/TZ;
+ * `createdAt`/`updatedAt` tetap instant UTC seperti yang dipakai app.
+ */
+interface HaidRange {
+  id: string;
+  jenis: string;
+  mulai: string; // YYYY-MM-DD
+  selesai: string | null; // YYYY-MM-DD | null (masih berlangsung)
+  catatan: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toRange(p: HaidRow): HaidRange {
   return {
     id: p.id,
     jenis: p.jenis,
-    mulai: mulaiIso,
-    selesai: selesaiIso,
-    berlangsung: selesaiIso === null,
-    durasiHari: selesaiIso ? inclusiveDays(mulaiIso, selesaiIso) : null,
+    mulai: toIsoDateOnly(p.mulai),
+    selesai: p.selesai ? toIsoDateOnly(p.selesai) : null,
     catatan: p.catatan,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
 }
 
+/** Shape a HaidPeriod range for the wire: dates as ISO `YYYY-MM-DD` strings. */
+function mapRange(r: HaidRange) {
+  return {
+    id: r.id,
+    jenis: r.jenis,
+    mulai: r.mulai,
+    selesai: r.selesai,
+    berlangsung: r.selesai === null,
+    durasiHari: r.selesai ? inclusiveDays(r.mulai, r.selesai) : null,
+    catatan: r.catatan,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+/** Idem, langsung dari baris DB (bentuk response tidak berubah). */
+function mapPeriod(p: HaidRow) {
+  return mapRange(toRange(p));
+}
+
+/** Kode error domain untuk siklus haid (dipakai client untuk bercabang). */
+export const HAID_ACTIVE_EXISTS = 'HAID_ACTIVE_EXISTS';
+export const HAID_OVERLAP = 'HAID_OVERLAP';
+export const HAID_INVALID_RANGE = 'HAID_INVALID_RANGE';
+
 @Injectable()
 export class MuslimahService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // ─── Sumber kebenaran tunggal: daftar periode user ───────────────────
+
+  /**
+   * Semua periode milik user sebagai rentang date-only, terbaru dulu.
+   * status/dashboard/prediksi/puasa-sunnah SEMUA membaca dari sini supaya tidak
+   * ada dua endpoint yang menghitung "sedang haid?" dengan aturan berbeda.
+   * Batas 500 baris ≈ puluhan tahun siklus; lebih dari itu tidak relevan.
+   */
+  private async loadPeriods(userId: string): Promise<HaidRange[]> {
+    const rows = await this.prisma.haidPeriod.findMany({
+      where: { userId },
+      orderBy: { mulai: 'desc' },
+      take: 500,
+    });
+    return rows.map(toRange);
+  }
+
+  /**
+   * Validasi rentang sebuah periode terhadap periode lain milik user yang sama.
+   * `excludeId` dipakai saat update agar entri itu sendiri tidak dianggap
+   * bertabrakan dengan dirinya.
+   *
+   * Aturan:
+   *  1. selesai < mulai                       → 422 HAID_INVALID_RANGE
+   *  2. periode baru terbuka & sudah ada yang
+   *     terbuka (selesai=null)                → 409 HAID_ACTIVE_EXISTS
+   *  3. beririsan dengan periode mana pun     → 409 HAID_OVERLAP
+   */
+  private assertPeriodConsistent(
+    periods: HaidRange[],
+    candidate: { mulai: string; selesai: string | null },
+    excludeId?: string,
+  ): void {
+    if (candidate.selesai && candidate.selesai < candidate.mulai) {
+      throw new UnprocessableEntityException({
+        message: 'Tanggal selesai tidak boleh sebelum tanggal mulai',
+        error: HAID_INVALID_RANGE,
+        code: HAID_INVALID_RANGE,
+      });
+    }
+
+    const others = periods.filter((p) => p.id !== excludeId);
+
+    if (candidate.selesai === null) {
+      const active = others.find((p) => p.selesai === null);
+      if (active) {
+        throw new ConflictException({
+          message: `Masih ada periode ${active.jenis} yang berlangsung sejak ${active.mulai}. Tutup dulu (isi tanggal selesai) sebelum mencatat periode baru.`,
+          error: HAID_ACTIVE_EXISTS,
+          code: HAID_ACTIVE_EXISTS,
+        });
+      }
+    }
+
+    const clash = others.find((p) =>
+      rangesOverlap(candidate.mulai, candidate.selesai, p.mulai, p.selesai),
+    );
+    if (clash) {
+      const rentang = clash.selesai
+        ? `${clash.mulai} s/d ${clash.selesai}`
+        : `${clash.mulai} (masih berlangsung)`;
+      throw new ConflictException({
+        message: `Rentang tanggal beririsan dengan periode ${clash.jenis} ${rentang}. Perbaiki tanggalnya atau hapus periode lama.`,
+        error: HAID_OVERLAP,
+        code: HAID_OVERLAP,
+      });
+    }
+  }
+
+  /**
+   * Jalankan cek-lalu-tulis di bawah advisory lock per user, di dalam satu
+   * transaksi. Tanpa ini dua POST yang datang bersamaan (double-tap di app)
+   * sama-sama lolos cek "ada periode aktif?" lalu sama-sama menulis — persis
+   * cara data korup itu terbentuk. Lock dilepas otomatis saat transaksi
+   * selesai/rollback, dan hanya menahan request user yang sama.
+   */
+  private guardedWrite<T>(
+    userId: string,
+    run: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`muslimah:haid:${userId}`}))`;
+      return run(tx);
+    });
+  }
+
+  /** Periode user dibaca di dalam transaksi (lihat guardedWrite). */
+  private async loadPeriodsTx(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<HaidRange[]> {
+    const rows = await tx.haidPeriod.findMany({
+      where: { userId },
+      orderBy: { mulai: 'desc' },
+      take: 500,
+    });
+    return rows.map(toRange);
+  }
 
   // ─── Riwayat siklus (haid / nifas / istihadhah) ──────────────────────
 
@@ -86,28 +230,27 @@ export class MuslimahService {
     userId: string,
     dto: CreateHaidPeriodDto,
   ): Promise<ResponsePayload<unknown>> {
-    if (dto.selesai && dto.selesai < dto.mulai) {
-      throw new BadRequestException({
-        message: 'Tanggal selesai tidak boleh sebelum tanggal mulai',
-        error: 'BAD_REQUEST',
-      });
-    }
+    const mulai = toIsoDateOnly(dto.mulai);
+    const selesai = dto.selesai ? toIsoDateOnly(dto.selesai) : null;
     const jenis = dto.jenis ?? 'haid';
-    const row = await this.prisma.haidPeriod.create({
-      data: {
-        userId,
-        jenis,
-        mulai: isoToUtcDate(dto.mulai),
-        selesai: dto.selesai ? isoToUtcDate(dto.selesai) : null,
-        catatan: dto.catatan,
-      },
+
+    const row = await this.guardedWrite(userId, async (tx) => {
+      const existing = await this.loadPeriodsTx(tx, userId);
+      this.assertPeriodConsistent(existing, { mulai, selesai });
+      return tx.haidPeriod.create({
+        data: {
+          userId,
+          jenis,
+          mulai: isoToUtcDate(mulai),
+          selesai: selesai ? isoToUtcDate(selesai) : null,
+          catatan: dto.catatan,
+        },
+      });
     });
 
     // Hitung berapa hari periode ini jatuh di Ramadhan → saran qadha puasa.
     const qadhaRamadhan =
-      jenis === 'istihadhah'
-        ? 0
-        : ramadhanDaysInRange(dto.mulai, dto.selesai ?? null);
+      jenis === 'istihadhah' ? 0 : ramadhanDaysInRange(mulai, selesai);
 
     return ok(
       { ...mapPeriod(row), qadhaRamadhan },
@@ -122,39 +265,45 @@ export class MuslimahService {
     id: string,
     dto: UpdateHaidPeriodDto,
   ): Promise<ResponsePayload<unknown>> {
-    const existing = await this.prisma.haidPeriod.findFirst({
-      where: { id, userId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        message: 'Periode tidak ditemukan',
-        error: 'NOT_FOUND',
+    const row = await this.guardedWrite(userId, async (tx) => {
+      const periods = await this.loadPeriodsTx(tx, userId);
+      const existing = periods.find((p) => p.id === id);
+      if (!existing) {
+        throw new NotFoundException({
+          message: 'Periode tidak ditemukan',
+          error: 'NOT_FOUND',
+        });
+      }
+      const nextMulai = dto.mulai ? toIsoDateOnly(dto.mulai) : existing.mulai;
+      // selesai: undefined = jangan ubah; "" / null = tandai masih berlangsung.
+      let nextSelesai: string | null;
+      if (dto.selesai === undefined) {
+        nextSelesai = existing.selesai;
+      } else {
+        nextSelesai =
+          dto.selesai === null || dto.selesai === ''
+            ? null
+            : toIsoDateOnly(dto.selesai);
+      }
+
+      // Cek yang sama seperti create, tapi entri ini dikecualikan dari
+      // pembandingan agar update yang tidak menggeser tanggal tidak "bentrok
+      // dengan dirinya sendiri".
+      this.assertPeriodConsistent(
+        periods,
+        { mulai: nextMulai, selesai: nextSelesai },
+        id,
+      );
+
+      return tx.haidPeriod.update({
+        where: { id },
+        data: {
+          jenis: dto.jenis ?? existing.jenis,
+          mulai: isoToUtcDate(nextMulai),
+          selesai: nextSelesai ? isoToUtcDate(nextSelesai) : null,
+          catatan: dto.catatan ?? existing.catatan,
+        },
       });
-    }
-    const nextMulai = dto.mulai ?? existing.mulai.toISOString().slice(0, 10);
-    // selesai: undefined = jangan ubah; "" = tandai masih berlangsung (null).
-    let nextSelesai: string | null;
-    if (dto.selesai === undefined) {
-      nextSelesai = existing.selesai
-        ? existing.selesai.toISOString().slice(0, 10)
-        : null;
-    } else {
-      nextSelesai = dto.selesai === '' ? null : dto.selesai;
-    }
-    if (nextSelesai && nextSelesai < nextMulai) {
-      throw new BadRequestException({
-        message: 'Tanggal selesai tidak boleh sebelum tanggal mulai',
-        error: 'BAD_REQUEST',
-      });
-    }
-    const row = await this.prisma.haidPeriod.update({
-      where: { id },
-      data: {
-        jenis: dto.jenis ?? existing.jenis,
-        mulai: isoToUtcDate(nextMulai),
-        selesai: nextSelesai ? isoToUtcDate(nextSelesai) : null,
-        catatan: dto.catatan ?? existing.catatan,
-      },
     });
     return ok(mapPeriod(row), 'Periode diperbarui');
   }
@@ -181,28 +330,22 @@ export class MuslimahService {
     userId: string,
     date?: string,
   ): Promise<ResponsePayload<unknown>> {
-    const target = date ?? jakartaTodayIso();
-    const targetDate = isoToUtcDate(target);
+    const target = toIsoDateOnly(date ?? jakartaTodayIso());
 
-    // Periode yang mencakup `target`: mulai <= target DAN (selesai null ATAU
-    // selesai >= target). Ambil yang paling akhir mulainya bila tumpang tindih.
-    const covering = await this.prisma.haidPeriod.findFirst({
-      where: {
-        userId,
-        mulai: { lte: targetDate },
-        OR: [{ selesai: null }, { selesai: { gte: targetDate } }],
-      },
-      orderBy: { mulai: 'desc' },
-    });
+    // Satu sumber kebenaran: daftar periode user. Periode yang masih
+    // berlangsung (selesai=null) dianggap terbuka sampai +∞, jadi tanggal mana
+    // pun setelah `mulai` ikut terhitung — bukan "suci".
+    const periods = await this.loadPeriods(userId);
+    const covering = findCoveringPeriod(periods, target);
 
     const status: IbadahStatus = (covering?.jenis as IbadahStatus) ?? 'suci';
     const ruling = rulingFor(status);
     const hijri = gregorianStringToHijri(target);
 
-    let periode: ReturnType<typeof mapPeriod> | null = null;
+    let periode: ReturnType<typeof mapRange> | null = null;
     let hariKe: number | null = null;
     if (covering) {
-      periode = mapPeriod(covering);
+      periode = mapRange(covering);
       hariKe = inclusiveDays(periode.mulai, target);
     }
 
@@ -233,21 +376,14 @@ export class MuslimahService {
     const days = puasaSunnahRange(mulai, hari);
 
     // Tandai hari yang bertabrakan dengan haid/nifas user (tidak bisa puasa).
-    const periods = await this.prisma.haidPeriod.findMany({
-      where: {
-        userId,
-        jenis: { in: ['haid', 'nifas'] },
-        mulai: { lte: isoToUtcDate(akhir) },
-        OR: [{ selesai: null }, { selesai: { gte: isoToUtcDate(mulai) } }],
-      },
-      select: { mulai: true, selesai: true },
-    });
+    // Pakai `coversDate` yang sama dengan /status & /dashboard supaya sebuah
+    // hari tidak pernah dinyatakan "haid" di satu endpoint dan "suci" di
+    // endpoint lain.
+    const periods = (await this.loadPeriods(userId)).filter(
+      (p) => p.jenis === 'haid' || p.jenis === 'nifas',
+    );
     const inHaid = (iso: string): boolean =>
-      periods.some((p) => {
-        const m = p.mulai.toISOString().slice(0, 10);
-        const s = p.selesai ? p.selesai.toISOString().slice(0, 10) : null;
-        return iso >= m && (s === null ? iso <= jakartaTodayIso() : iso <= s);
-      });
+      periods.some((p) => coversDate(p, iso));
 
     const enriched = days.map((d) => ({ ...d, haid: inHaid(d.tanggal) }));
     const terlarang = hariTerlarangRange(mulai, hari);
@@ -368,24 +504,20 @@ export class MuslimahService {
 
   // ─── Prediksi siklus ──────────────────────────────────────────────────
 
-  /** Ambil periode (haid + lainnya) terbaru untuk dasar prediksi. */
-  private async loadPeriodsForPrediction(userId: string) {
-    const rows = await this.prisma.haidPeriod.findMany({
-      where: { userId },
-      orderBy: { mulai: 'desc' },
-      take: 24,
-      select: { jenis: true, mulai: true, selesai: true },
-    });
-    return rows.map((r) => ({
-      jenis: r.jenis,
-      mulai: r.mulai.toISOString().slice(0, 10),
-      selesai: r.selesai ? r.selesai.toISOString().slice(0, 10) : null,
-    }));
+  /**
+   * Periode terbaru untuk dasar prediksi — diambil dari daftar periode yang
+   * sama dengan /status & /dashboard (bukan query terpisah), lalu dipotong 24
+   * siklus terakhir.
+   */
+  private forPrediction(periods: HaidRange[]) {
+    return periods
+      .slice(0, 24)
+      .map((r) => ({ jenis: r.jenis, mulai: r.mulai, selesai: r.selesai }));
   }
 
   async prediksi(userId: string): Promise<ResponsePayload<unknown>> {
-    const periods = await this.loadPeriodsForPrediction(userId);
-    const p = predictNextHaid(periods);
+    const periods = await this.loadPeriods(userId);
+    const p = predictNextHaid(this.forPrediction(periods));
     return ok(p, 'Prediksi siklus haid');
   }
 
@@ -473,32 +605,25 @@ export class MuslimahService {
 
   async dashboard(userId: string): Promise<ResponsePayload<unknown>> {
     const today = jakartaTodayIso();
-    const todayDate = isoToUtcDate(today);
     const hijri = gregorianStringToHijri(today);
 
-    const [covering, qadhaRows, hafalanDue, amalanRows] =
-      await this.prisma.$transaction([
-        this.prisma.haidPeriod.findFirst({
-          where: {
-            userId,
-            mulai: { lte: todayDate },
-            OR: [{ selesai: null }, { selesai: { gte: todayDate } }],
-          },
-          orderBy: { mulai: 'desc' },
-        }),
-        this.prisma.qadhaPuasa.findMany({ where: { userId } }),
-        this.prisma.hafalan.count({
-          where: { userId, nextReviewAt: { lte: new Date() } },
-        }),
-        this.prisma.amalanLog.count({ where: { userId, tanggal: today } }),
-      ]);
+    const [qadhaRows, hafalanDue, amalanRows] = await this.prisma.$transaction([
+      this.prisma.qadhaPuasa.findMany({ where: { userId } }),
+      this.prisma.hafalan.count({
+        where: { userId, nextReviewAt: { lte: new Date() } },
+      }),
+      this.prisma.amalanLog.count({ where: { userId, tanggal: today } }),
+    ]);
 
-    const periodsForPrediction = await this.loadPeriodsForPrediction(userId);
-    const prediksi = predictNextHaid(periodsForPrediction, today);
+    // Status & prediksi dihitung dari daftar periode yang sama persis dengan
+    // /muslimah/status — dashboard tidak boleh punya aturannya sendiri.
+    const periods = await this.loadPeriods(userId);
+    const covering = findCoveringPeriod(periods, today);
+    const prediksi = predictNextHaid(this.forPrediction(periods), today);
 
     const status: IbadahStatus = (covering?.jenis as IbadahStatus) ?? 'suci';
     const ruling = rulingFor(status);
-    const periode = covering ? mapPeriod(covering) : null;
+    const periode = covering ? mapRange(covering) : null;
     const hariKe = periode ? inclusiveDays(periode.mulai, today) : null;
 
     const totalHutang = qadhaRows.reduce((s, r) => s + r.jumlah, 0);
@@ -510,12 +635,11 @@ export class MuslimahService {
     // Puasa sunnah terdekat dalam 45 hari (yang tidak bertabrakan dgn haid).
     const sunnah = puasaSunnahRange(today, 45);
     let berikutnya: (typeof sunnah)[number] | null = null;
+    const pemblokir = periods.filter(
+      (p) => p.jenis === 'haid' || p.jenis === 'nifas',
+    );
     for (const d of sunnah) {
-      const blocked =
-        (status === 'haid' || status === 'nifas') &&
-        periode !== null &&
-        d.tanggal >= periode.mulai &&
-        (periode.selesai === null ? d.tanggal <= today : d.tanggal <= periode.selesai);
+      const blocked = pemblokir.some((p) => coversDate(p, d.tanggal));
       if (!blocked) {
         berikutnya = d;
         break;

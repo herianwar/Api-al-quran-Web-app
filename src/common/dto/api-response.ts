@@ -12,6 +12,12 @@ export interface ApiError {
   message: string;
   error: string;
   statusCode: number;
+  /**
+   * Kode domain opsional (mis. `HAID_OVERLAP`) untuk error yang perlu
+   * dibedakan oleh client tanpa mem-parsing teks pesan. Hanya muncul bila
+   * exception melampirkan `code`; field `error`/`statusCode` tidak berubah.
+   */
+  code?: string;
 }
 
 /**
